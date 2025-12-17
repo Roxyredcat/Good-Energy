@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Heart, MessageCircle, Users, Search, X, LogOut, Home, Settings, ChevronRight, AlertCircle, Crown, Lock, Unlock, MessageSquare, Sparkles } from 'lucide-react';
 import AvatarCreator from './AvatarCreator';
