@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
 import { Heart, MessageCircle, Users, Search, X, LogOut, Home, Settings, ChevronRight, AlertCircle, Crown, Lock, Unlock, MessageSquare, Sparkles } from 'lucide-react';
