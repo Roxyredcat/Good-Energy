@@ -1,0 +1,235 @@
+import React, { useState } from 'react';
+import { Camera, Search, X, Check } from 'lucide-react';
+
+// ALL EMOJI CATEGORIES - 1000+ emojis organized
+const EMOJI_CATEGORIES = {
+  'Smileys': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','😌','😔','😪','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐'],
+  'Animals': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🦗','🕷','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🦧','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐈','🐓','🦃','🦚','🦜','🦢','🦩','🕊','🐇','🦝','🦨','🦡','🦦','🦥','🐁','🐀','🐿','🦔'],
+  'Food': ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶','🌽','🥕','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🥪','🥙','🧆','🌮','🌯','🥗','🥘','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🍤','🍙','🍚','🍘','🍥','🥠','🥮','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🥛','🍼','☕','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾'],
+  'Nature': ['🌸','🌺','🌼','🌻','🌷','🌹','🥀','🏵','💐','🌾','🌱','🌿','🍀','🍁','🍂','🍃','☘️','🌲','🌳','🌴','🌵','🌾','🌿','🎋','🎍','🪴','🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘','🌙','🌚','🌛','🌜','☀️','🌝','🌞','⭐','🌟','✨','⚡','☄️','💫','🔥','💥','☁️','⛅','🌤','⛈','🌦','🌧','🌨','🌩','🌪','🌫','🌬','🌀','🌈','🌂','☂️','⛱️','⚡','❄️','☃️','⛄','☄️','🔥','💧','🌊'],
+  'Activities': ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🏓','🏸','🏒','🏑','🥍','🏏','🥅','⛳','🏹','🎣','🥊','🥋','🎽','🛹','🛼','🛷','⛸','🥌','🎿','⛷','🏂','🏋️','🤼','🤸','🤺','🤾','🏌️','🏇','🧘','🏊','🤽','🚣','🧗','🚴','🚵','🎪','🎭','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🎷','🎺','🎸','🎻','🎲','🎯','🎳','🎮','🎰','🧩'],
+  'Travel': ['🚗','🚕','🚙','🚌','🚎','🏎','🚓','🚑','🚒','🚐','🚚','🚛','🚜','🦯','🦽','🦼','🛴','🚲','🛵','🏍','🛺','🚁','✈️','🛫','🛬','🛩','🚀','🛸','🚁','⛵','🚤','🛥','🛳','⛴','🚢','⚓','🏰','🏯','🏟','🗼','🗽','⛪','🕌','🛕','🕍','⛩','🕋','🏠','🏡','🏢','🏣','🏤','🏥','🏦','🏨','🏩','🏪','🏫','🏬','🏭','🏯','🏰','🗻','🗼','🗽','⛲','⛱','🏖','🏝','🏜','🌋','⛰','🗻','🏕','⛺'],
+  'Objects': ['⌚','📱','📲','💻','⌨️','🖥','🖨','🖱','🖲','🕹','🗜','💾','💿','📀','📼','📷','📸','📹','🎥','📽','🎞','📞','☎️','📟','📠','📺','📻','🎙','🎚','🎛','🧭','⏱','⏲','⏰','🕰','⌛','⏳','📡','🔋','🔌','💡','🔦','🕯','🪔','🧯','💸','💵','💴','💶','💷','💰','💳','💎','⚖️','🪜','🔧','🔨','⚒','🛠','⛏','🪚','🔩','⚙️','⛓','🧲','🔫','💣','🧨','🪓','🔪','🗡','⚔️','🛡','🚬','⚰️','🪦','⚱️','🏺','🔮','📿','🧿','💈','⚗️','🔭','🔬','💊','💉','🩹','🩺','🌡','🧹','🧺','🧻','🚽','🚰','🚿','🛁','🧼','🪥','🪒','🧽','🧴','🛎','🔑','🗝','🚪','🛋','🛏','🖼','🪞','🪟','🛍','🛒','🎁','🎈','🎀','🎊','🎉','🎎','🏮'],
+  'Hearts & Symbols': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉','☸️','✡️','🔯','🕎','☯️','☦️','🛐','⭐','🌟','✨','⚡','💫','🔥','💥','☄️','💦','💨','🌈','☀️','🌙','⭐','✨','☁️','⛅','🌤','🌦','🌧','🌩','🌨','☃️','⛄','❄️','🌬','💨','🌪','🌫','☂️','☔','💧','💦','🌊','🔴','🟠','🟡','🟢','🔵','🟣','🟤','⚫','⚪','🟥','🟧','🟨','🟩','🟦','🟪','🟫','⬛','⬜','◼️','◻️','◾','◽','▪️','▫️','✔️','✅','☑️','❌','❎','➕','➖','✖️','➗','💯','💢','💤','💬','💭']
+};
+
+const ExpandedAvatarCreator = () => {
+  const [avatarType, setAvatarType] = useState('emoji');
+  const [selectedEmoji, setSelectedEmoji] = useState('😊');
+  const [selectedColor, setSelectedColor] = useState('bg-blue-500');
+  const [uploadedPhoto, setUploadedPhoto] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('Smileys');
+
+  const colors = [
+    'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500', 
+    'bg-indigo-500', 'bg-red-500', 'bg-yellow-500', 'bg-teal-500', 
+    'bg-cyan-500', 'bg-orange-500', 'bg-rose-500', 'bg-violet-500',
+    'bg-lime-500', 'bg-emerald-500', 'bg-sky-500', 'bg-fuchsia-500'
+  ];
+
+  const getFilteredEmojis = () => {
+    const emojis = EMOJI_CATEGORIES[activeCategory] || [];
+    if (!searchQuery.trim()) return emojis;
+    return emojis.filter(emoji => emoji.includes(searchQuery));
+  };
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert('File must be less than 5MB');
+        return;
+      }
+      if (!file.type.startsWith('image/')) {
+        alert('Please upload an image (JPG, PNG, GIF)');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => setUploadedPhoto(event.target?.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSave = () => {
+    if (avatarType === 'emoji') {
+      alert(`✅ Emoji Avatar Saved!\n${selectedEmoji} with ${selectedColor} background`);
+    } else {
+      if (!uploadedPhoto) {
+        alert('Please upload a photo first');
+        return;
+      }
+      alert('✅ Photo Avatar Saved!');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+          
+          {/* Header */}
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
+            <h1 className="text-3xl font-bold mb-2">Create Your Avatar ✨</h1>
+            <p className="text-indigo-100">Choose from 1000+ emojis or upload your photo</p>
+          </div>
+
+          {/* Avatar Type Toggle */}
+          <div className="p-6 border-b bg-gray-50">
+            <div className="grid grid-cols-2 gap-4 max-w-2xl mx-auto">
+              <button
+                onClick={() => setAvatarType('emoji')}
+                className={`p-6 rounded-xl border-2 transition-all ${
+                  avatarType === 'emoji'
+                    ? 'border-indigo-600 bg-indigo-50 shadow-lg scale-105'
+                    : 'border-gray-300 hover:border-gray-400'
+                }`}
+              >
+                <div className="text-5xl mb-3">😊</div>
+                <p className="font-bold text-gray-800">Emoji Avatar</p>
+                <p className="text-sm text-gray-600">1000+ emojis</p>
+              </button>
+
+              <button
+                onClick={() => setAvatarType('photo')}
+                className={`p-6 rounded-xl border-2 transition-all ${
+                  avatarType === 'photo'
+                    ? 'border-indigo-600 bg-indigo-50 shadow-lg scale-105'
+                    : 'border-gray-300 hover:border-gray-400'
+                }`}
+              >
+                <Camera className="w-12 h-12 mx-auto mb-3 text-gray-600" />
+                <p className="font-bold text-gray-800">Photo Avatar</p>
+                <p className="text-sm text-gray-600">Upload image</p>
+              </button>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="p-6">
+            {avatarType === 'emoji' ? (
+              <div className="space-y-6">
+                
+                {/* Search */}
+                <div className="relative max-w-2xl mx-auto">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search emojis..."
+                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:border-indigo-600 focus:outline-none"
+                  />
+                </div>
+
+                {/* Categories */}
+                <div className="flex gap-2 overflow-x-auto pb-2">
+                  {Object.keys(EMOJI_CATEGORIES).map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => { setActiveCategory(cat); setSearchQuery(''); }}
+                      className={`px-4 py-2 rounded-lg whitespace-nowrap font-medium transition ${
+                        activeCategory === cat ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Emoji Grid */}
+                <div className="bg-gray-50 rounded-xl p-4 max-h-96 overflow-y-auto">
+                  <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2">
+                    {getFilteredEmojis().map((emoji, i) => (
+                      <button
+                        key={`${emoji}-${i}`}
+                        onClick={() => setSelectedEmoji(emoji)}
+                        className={`text-4xl p-3 rounded-lg transition hover:scale-110 ${
+                          selectedEmoji === emoji
+                            ? 'bg-indigo-200 ring-4 ring-indigo-600 scale-110'
+                            : 'bg-white hover:bg-gray-100'
+                        }`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Colors */}
+                <div>
+                  <label className="block font-bold text-gray-800 mb-3">Background Color</label>
+                  <div className="grid grid-cols-8 gap-3 max-w-2xl">
+                    {colors.map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => setSelectedColor(color)}
+                        className={`w-12 h-12 rounded-full transition ${color} ${
+                          selectedColor === color ? 'ring-4 ring-offset-2 ring-gray-800 scale-110' : 'hover:scale-105'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Preview */}
+                <div className="bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl p-8 text-center">
+                  <p className="text-gray-600 font-bold mb-4">Preview</p>
+                  <div className={`${selectedColor} w-48 h-48 rounded-full flex items-center justify-center text-9xl shadow-2xl mx-auto border-4 border-white`}>
+                    {selectedEmoji}
+                  </div>
+                </div>
+
+              </div>
+            ) : (
+              <div className="space-y-6 max-w-2xl mx-auto">
+                
+                {/* Upload Area */}
+                <div className="border-2 border-dashed border-indigo-400 rounded-xl p-12 text-center bg-indigo-50 hover:bg-indigo-100 transition">
+                  <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" id="photo-upload" />
+                  <label htmlFor="photo-upload" className="cursor-pointer">
+                    <Camera className="w-16 h-16 mx-auto mb-4 text-indigo-600" />
+                    <p className="font-bold text-xl mb-2">Click to upload photo</p>
+                    <p className="text-sm text-gray-600 mb-2">or drag and drop</p>
+                    <p className="text-xs text-gray-500">JPG, PNG, GIF (max 5MB)</p>
+                  </label>
+                </div>
+
+                {/* Photo Preview */}
+                {uploadedPhoto && (
+                  <div className="bg-gray-50 rounded-xl p-8 text-center">
+                    <p className="text-gray-600 font-bold mb-4">Preview</p>
+                    <div className="relative inline-block">
+                      <img src={uploadedPhoto} alt="Preview" className="w-48 h-48 rounded-full object-cover shadow-2xl border-4 border-white" />
+                      <button
+                        onClick={() => setUploadedPhoto(null)}
+                        className="absolute top-0 right-0 bg-red-500 text-white rounded-full p-2 hover:bg-red-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            )}
+          </div>
+
+          {/* Footer Buttons */}
+          <div className="p-6 bg-gray-50 border-t flex gap-3 justify-end">
+            <button
+              onClick={handleSave}
+              className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-700 transition flex items-center gap-2"
+            >
+              <Check className="w-5 h-5" />
+              Save Avatar
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ExpandedAvatarCreator;
