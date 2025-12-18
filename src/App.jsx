@@ -441,71 +441,41 @@ export default function GoodEnergyApp() {
     if (showPrivacy) console.log('RENDER: Privacy modal rendered');
   }, [showPrivacy]);
 
-  // Render Terms/Privacy modals into a body-mounted portal so they're always available
-  const _modalContainerRef = useRef(null);
-  const _modalRootRef = useRef(null);
-  useEffect(() => {
-    _modalContainerRef.current = document.createElement('div');
-    document.body.appendChild(_modalContainerRef.current);
-    _modalRootRef.current = createRoot(_modalContainerRef.current);
-    return () => {
-      try {
-        if (_modalRootRef.current) _modalRootRef.current.unmount();
-      } catch (e) { }
-      try { document.body.removeChild(_modalContainerRef.current); } catch (e) { }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!_modalRootRef.current) return;
-
-    const ModalContent = () => (
-      <>
-        {showTerms && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl p-6 w-full max-w-3xl max-h-[80vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold">TERMS OF SERVICE</h2>
-                <button onClick={() => setShowTerms(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
-              </div>
-              <p className="text-sm text-gray-700 mb-4">Last Updated: December 14, 2025</p>
-              <section className="mb-3">
-                <h3 className="font-semibold">Welcome to Good Energy</h3>
-                <p className="text-sm text-gray-700">Good Energy is a social space designed for calm expression and positive connection. By using our service, you agree to these terms.</p>
-              </section>
-              <div className="mt-4">
-                <p className="text-sm text-gray-700">By using our service, you agree to these terms. <button type="button" onClick={() => window.open('/legal.html', '_blank')} className="text-indigo-600 underline">See Terms & Privacy details</button></p>
-              </div>
-              <div className="mt-4 text-right">
-                <button onClick={() => setShowTerms(false)} className="bg-indigo-600 text-white px-4 py-2 rounded">Close</button>
-              </div>
+{/* Legal Modals - React Portal Method */}
+      {showTerms && createPortal(
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-3xl max-h-[80vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">TERMS OF SERVICE</h2>
+              <button onClick={() => setShowTerms(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
+            </div>
+            <p className="text-sm text-gray-700 mb-4 font-bold text-indigo-600 underline cursor-pointer" onClick={() => window.open('/legal.html', '_blank')}>Full Legal Document Available Here</p>
+            <section className="mb-3 text-sm text-gray-700">
+              <p>Good Energy is a social space designed for calm expression and positive connection. By using our service, you agree to our community standards and terms.</p>
+            </section>
+            <div className="mt-4 text-right">
+              <button onClick={() => setShowTerms(false)} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold">I Agree</button>
             </div>
           </div>
-        )}
+        </div>,
+        document.body
+      )}
 
-        {showPrivacy && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl p-6 w-full max-w-3xl max-h-[80vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold">PRIVACY POLICY</h2>
-                <button onClick={() => setShowPrivacy(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
-              </div>
-              <p className="text-sm text-gray-700 mb-4">Last Updated: December 14, 2025</p>
-              <section className="mb-3">
-                <h3 className="font-semibold">Privacy</h3>
-                <p className="text-sm text-gray-700">We collect minimal data and use it to operate the service; <button type="button" onClick={() => window.open('/legal.html', '_blank')} className="text-indigo-600 underline">see Terms & Privacy details</button>.</p>
-              </section>
-              <div className="mt-4 text-right">
-                <button onClick={() => setShowPrivacy(false)} className="bg-indigo-600 text-white px-4 py-2 rounded">Close</button>
-              </div>
+      {showPrivacy && createPortal(
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-3xl max-h-[80vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">PRIVACY POLICY</h2>
+              <button onClick={() => setShowPrivacy(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
+            </div>
+            <p className="text-sm text-gray-700">We collect minimal data to operate the service. We do not sell your personal information.</p>
+            <div className="mt-4 text-right">
+              <button onClick={() => setShowPrivacy(false)} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold">Close</button>
             </div>
           </div>
-        )}
-      </>
-    );
-
-    _modalRootRef.current.render(React.createElement(ModalContent));
-  }, [showTerms, showPrivacy]);
+        </div>,
+        document.body
+      )}
   // Forum (local, client-side)
   const [forumPosts, setForumPosts] = useState([
     { id: 1, question: 'How do I upgrade to Premium?', answers: [{ id: 1, text: 'Click the Upgrade button in the banner or Settings.' }] },
