@@ -1306,7 +1306,3 @@ export default function GoodEnergyApp() {
 
   return <div>Loading...</div>;
 }
-
-
-
-}
