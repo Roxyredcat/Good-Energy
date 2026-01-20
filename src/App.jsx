@@ -105,6 +105,7 @@ export default function App() {
 
   const [email,setEmail] = useState('');
   const [password,setPassword] = useState('');
+  const [passwordConfirm,setPasswordConfirm] = useState('');
   const [username,setUsername] = useState('');
   const [age,setAge] = useState('');
   const [isTeenPool,setIsTeenPool] = useState(false);
@@ -180,12 +181,23 @@ export default function App() {
       setError('Please fill in all fields');
       return;
     }
+    if (password !== passwordConfirm) {
+      setError('Passwords do not match');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
     if (!age || age < 13) {
       setError('You must be at least 13 years old to use Good Energy');
       return;
     }
     try {
+      console.log('Attempting signup with:', email);
       const cred = await createUserWithEmailAndPassword(auth,email,password);
+      console.log('User created:', cred.user.uid);
+      
       const teenPool = parseInt(age) < 18;
       await setDoc(doc(db,'profiles',cred.user.uid),{
         username,
@@ -197,23 +209,34 @@ export default function App() {
         isTeenPool:teenPool,
         createdAt:serverTimestamp()
       });
+      console.log('Profile created');
       setEmail('');
       setPassword('');
+      setPasswordConfirm('');
       setUsername('');
       setAge('');
       setError('');
     } catch (err) {
-      setError(err.message || 'Failed to create account');
+      console.error('Signup error:', err);
+      setError(err.message || 'Failed to create account - check Firebase config');
     }
   };
 
   const login = async () => {
+    if (!email || !password) {
+      setError('Please fill in email and password');
+      return;
+    }
     try {
+      console.log('Attempting login with:', email);
       await signInWithEmailAndPassword(auth,email,password);
+      console.log('Login successful');
       setEmail('');
       setPassword('');
+      setPasswordConfirm('');
       setError('');
     } catch (err) {
+      console.error('Login error:', err);
       setError(err.message || 'Failed to login');
     }
   };
@@ -380,13 +403,15 @@ export default function App() {
   if (view === 'auth') return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="bg-white p-8 rounded-xl w-96">
-        <input placeholder="Username" onChange={e=>setUsername(e.target.value)} className="w-full mb-2 p-2 border"/>
-        <input placeholder="Email" onChange={e=>setEmail(e.target.value)} className="w-full mb-2 p-2 border"/>
-        <input type="password" placeholder="Password" onChange={e=>setPassword(e.target.value)} className="w-full mb-2 p-2 border"/>
-        <input type="number" placeholder="Age" min="13" max="120" onChange={e=>setAge(e.target.value)} className="w-full mb-4 p-2 border"/>
-        {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
-        <button onClick={signUp} className="w-full bg-indigo-600 text-white py-2 rounded mb-2">Sign Up</button>
-        <button onClick={login} className="w-full bg-gray-200 py-2 rounded">Log In</button>
+        <h2 className="text-2xl font-bold mb-4">Good Energy 🌿</h2>
+        <input placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} className="w-full mb-2 p-2 border"/>
+        <input placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full mb-2 p-2 border"/>
+        <input type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full mb-2 p-2 border"/>
+        <input type="password" placeholder="Confirm Password" value={passwordConfirm} onChange={e=>setPasswordConfirm(e.target.value)} className="w-full mb-2 p-2 border"/>
+        <input type="number" placeholder="Age" min="13" max="120" value={age} onChange={e=>setAge(e.target.value)} className="w-full mb-4 p-2 border"/>
+        {error && <div className="text-red-600 text-sm mb-2 p-2 bg-red-50 rounded">{error}</div>}
+        <button onClick={signUp} className="w-full bg-indigo-600 text-white py-2 rounded mb-2 font-bold">Sign Up</button>
+        <button onClick={login} className="w-full bg-gray-200 py-2 rounded">Already have account? Log In</button>
       </div>
     </div>
   );
