@@ -48,10 +48,19 @@ const db = getFirestore(app);
 const ModerationEngine = {
   negative: ['stupid','idiot','dumb','trash','garbage','hate','worst','loser'],
   targeted: ['you are',"you're",'your'],
+  predatory: ['meet up','address','phone number','where do you','come over','alone','parents away','snap me','kik','whatsapp','private','secret','dont tell','tell no one'],
 
-  check(text) {
+  check(text, isTeenPool=false) {
     const t = text.toLowerCase().trim();
     if (!t) return { allowed:false, reason:'Message cannot be empty' };
+
+    // Predatory language detection for teen pool
+    if (isTeenPool) {
+      const hasPredatory = this.predatory.some(p => t.includes(p));
+      if (hasPredatory) {
+        return { allowed:false, reason:'⚠️ Unsafe message detected. We protect teen safety here.' };
+      }
+    }
 
     const neg = this.negative.some(w => t.includes(w));
     const targ = this.targeted.some(p => t.includes(p));
@@ -65,14 +74,26 @@ const ModerationEngine = {
 
 /* ================= AVATAR ================= */
 
-const Avatar = ({ config={}, size=48 }) => (
-  <div
-    className={`${config.color || 'bg-blue-500'} rounded-full flex items-center justify-center`}
-    style={{ width:size, height:size }}
-  >
-    <span style={{ fontSize:size*0.6 }}>{config.emoji || '😊'}</span>
-  </div>
-);
+const Avatar = ({ config={}, size=48 }) => {
+  if (config.photoUrl) {
+    return (
+      <img
+        src={config.photoUrl}
+        alt="avatar"
+        className="rounded-full object-cover"
+        style={{ width:size, height:size }}
+      />
+    );
+  }
+  return (
+    <div
+      className={`${config.color || 'bg-blue-500'} rounded-full flex items-center justify-center`}
+      style={{ width:size, height:size }}
+    >
+      <span style={{ fontSize:size*0.6 }}>{config.emoji || '😊'}</span>
+    </div>
+  );
+};
 
 /* ================= APP ================= */
 
@@ -85,14 +106,24 @@ export default function App() {
   const [email,setEmail] = useState('');
   const [password,setPassword] = useState('');
   const [username,setUsername] = useState('');
+  const [age,setAge] = useState('');
+  const [isTeenPool,setIsTeenPool] = useState(false);
+  const [isPremium,setIsPremium] = useState(false);
 
   const [posts,setPosts] = useState([]);
   const [newPost,setNewPost] = useState('');
+  const [newPostMedia,setNewPostMedia] = useState(null);
   const [commentInputs,setCommentInputs] = useState({});
   const [error,setError] = useState('');
 
   const [board,setBoard] = useState(Array(9).fill(null));
   const [player,setPlayer] = useState('X');
+
+  const [showProfileEdit,setShowProfileEdit] = useState(false);
+  const [selectedEmoji,setSelectedEmoji] = useState('😊');
+  const [showReactionPicker,setShowReactionPicker] = useState(null);
+  const [showWordFinder,setShowWordFinder] = useState(false);
+  const [wordScore,setWordScore] = useState(0);
 
   /* ===== AUTH LISTENER ===== */
 
@@ -109,7 +140,10 @@ export default function App() {
       const snap = await getDoc(doc(db,'profiles',u.uid));
 
       if (snap.exists()) {
-        setProfile(snap.data());
+        const data = snap.data();
+        setProfile(data);
+        setIsPremium(data.isPremium || false);
+        setIsTeenPool(data.isTeenPool || false);
         setView('feed');
       } else {
         setView('onboarding');
@@ -128,22 +162,34 @@ export default function App() {
         snap.docs.map(async d => {
           const data = d.data();
           const p = await getDoc(doc(db,'profiles',data.authorId));
+          // Filter: teens only see teen pool posts, adults see all
+          if (isTeenPool && !data.isTeenPool && data.authorId !== user.uid) {
+            return null;
+          }
           return { id:d.id, ...data, profiles:p.data() };
         })
       );
-      setPosts(loaded);
+      setPosts(loaded.filter(Boolean));
     });
-  }, [user]);
+  }, [user, isTeenPool]);
 
   /* ===== AUTH ===== */
 
   const signUp = async () => {
+    if (!age || age < 13) {
+      setError('You must be at least 13 years old to use Good Energy');
+      return;
+    }
     const cred = await createUserWithEmailAndPassword(auth,email,password);
+    const teenPool = parseInt(age) < 18;
     await setDoc(doc(db,'profiles',cred.user.uid),{
       username,
+      age: parseInt(age),
       aura:'blue',
       violations:0,
       avatar:{ emoji:'😊', color:'bg-blue-500' },
+      isPremium:false,
+      isTeenPool:teenPool,
       createdAt:serverTimestamp()
     });
   };
@@ -154,25 +200,62 @@ export default function App() {
   const logout = async () =>
     signOut(auth);
 
+  /* ===== PROFILE ===== */
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const photoUrl = ev.target?.result;
+      const newAvatar = { ...profile.avatar, photoUrl };
+      await updateDoc(doc(db,'profiles',user.uid), { avatar: newAvatar });
+      setProfile(p => ({...p, avatar: newAvatar}));
+      setShowProfileEdit(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const updateAvatar = async (emoji) => {
+    const newAvatar = { emoji, color:'bg-blue-500' };
+    await updateDoc(doc(db,'profiles',user.uid), { avatar: newAvatar });
+    setProfile(p => ({...p, avatar: newAvatar}));
+    setShowProfileEdit(false);
+  };
+
   /* ===== POSTS ===== */
 
   const createPost = async () => {
-    const check = ModerationEngine.check(newPost);
+    const check = ModerationEngine.check(newPost, isTeenPool);
     if (!check.allowed) return setError(check.reason);
 
     await addDoc(collection(db,'posts'),{
       content:newPost,
+      mediaUrl:newPostMedia,
       authorId:user.uid,
+      isTeenPool:isTeenPool,
       reactions:[],
+      emojiReactions:{},
       createdAt:serverTimestamp()
     });
     setNewPost('');
+    setNewPostMedia(null);
     setError('');
   };
 
   const comment = async (postId,text) => {
-    const check = ModerationEngine.check(text);
+    const check = ModerationEngine.check(text, isTeenPool);
     if (!check.allowed) {
+      if (isTeenPool) {
+        // Teen violations are more serious - ban on predatory behavior
+        const isPredatory = check.reason.includes('Unsafe message');
+        if (isPredatory) {
+          await updateDoc(doc(db,'profiles',user.uid), { violations: 999, aura:'banned' });
+          setError('Your account has been suspended for safety violations.');
+          return;
+        }
+      }
       await violation();
       return setError(check.reason);
     }
@@ -193,6 +276,23 @@ export default function App() {
         ? post.reactions.filter(id=>id!==user.uid)
         : arrayUnion(user.uid)
     });
+  };
+
+  const reactWithEmoji = async (post, emoji) => {
+    const ref = doc(db,'posts',post.id);
+    const reactionKey = `${user.uid}_${emoji}`;
+    const hasReaction = post.emojiReactions?.[reactionKey];
+    
+    if (hasReaction) {
+      const updated = {...post.emojiReactions};
+      delete updated[reactionKey];
+      await updateDoc(ref, { emojiReactions: updated });
+    } else {
+      await updateDoc(ref, {
+        emojiReactions: { ...post.emojiReactions, [reactionKey]: emoji }
+      });
+    }
+    setShowReactionPicker(null);
   };
 
   /* ===== VIOLATIONS ===== */
@@ -252,7 +352,9 @@ export default function App() {
       <div className="bg-white p-8 rounded-xl w-96">
         <input placeholder="Username" onChange={e=>setUsername(e.target.value)} className="w-full mb-2 p-2 border"/>
         <input placeholder="Email" onChange={e=>setEmail(e.target.value)} className="w-full mb-2 p-2 border"/>
-        <input type="password" placeholder="Password" onChange={e=>setPassword(e.target.value)} className="w-full mb-4 p-2 border"/>
+        <input type="password" placeholder="Password" onChange={e=>setPassword(e.target.value)} className="w-full mb-2 p-2 border"/>
+        <input type="number" placeholder="Age" min="13" max="120" onChange={e=>setAge(e.target.value)} className="w-full mb-4 p-2 border"/>
+        {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
         <button onClick={signUp} className="w-full bg-indigo-600 text-white py-2 rounded mb-2">Sign Up</button>
         <button onClick={login} className="w-full bg-gray-200 py-2 rounded">Log In</button>
       </div>
@@ -263,16 +365,60 @@ export default function App() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-50">
       <div className="bg-white p-8 rounded-xl w-96 text-center">
         <h2 className="text-2xl font-bold mb-4">Welcome to Good Energy! 🌿</h2>
-        <p className="text-gray-600 mb-6">Let's get you set up.</p>
+        <p className="text-gray-600 mb-6">Choose your experience:</p>
         <button
           onClick={async () => {
-            if (profile) {
-              setView('feed');
-            }
+            await updateDoc(doc(db,'profiles',user.uid), { isPremium:false });
+            setIsPremium(false);
+            setView('feed');
           }}
-          className="w-full bg-indigo-600 text-white py-2 rounded"
+          className="w-full bg-gray-200 text-gray-800 py-2 rounded mb-2"
         >
-          Continue
+          Continue Free
+        </button>
+        <button
+          onClick={async () => {
+            setView('premium');
+          }}
+          className="w-full bg-yellow-500 text-white py-2 rounded"
+        >
+          ✨ Upgrade to Premium
+        </button>
+      </div>
+    </div>
+  );
+
+  if (view === 'premium') return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-yellow-50 to-amber-50">
+      <div className="bg-white p-8 rounded-xl w-96 text-center">
+        <h2 className="text-2xl font-bold mb-2">✨ Good Energy Premium</h2>
+        <p className="text-gray-600 mb-4 text-sm">Unlock exclusive features</p>
+        <ul className="text-left mb-6 space-y-2 text-sm">
+          <li>✅ Word Finder Game</li>
+          <li>✅ Priority Moderation</li>
+          <li>✅ Custom Emoji Reactions</li>
+          <li>✅ Advanced Analytics</li>
+        </ul>
+        <div className="text-2xl font-bold text-yellow-600 mb-4">$4.99/month</div>
+        <button
+          onClick={async () => {
+            await updateDoc(doc(db,'profiles',user.uid), { isPremium:true });
+            setIsPremium(true);
+            setView('feed');
+          }}
+          className="w-full bg-yellow-500 text-white py-2 rounded mb-2 font-bold"
+        >
+          Subscribe
+        </button>
+        <button
+          onClick={async () => {
+            await updateDoc(doc(db,'profiles',user.uid), { isPremium:false });
+            setIsPremium(false);
+            setView('feed');
+          }}
+          className="w-full bg-gray-200 py-2 rounded"
+        >
+          Skip for Now
         </button>
       </div>
     </div>
@@ -302,15 +448,95 @@ export default function App() {
     </div>
   );
 
+  if (profile?.aura === 'banned') return (
+    <div className="min-h-screen flex items-center justify-center bg-red-50">
+      <div className="bg-white p-8 rounded-xl w-96 text-center border-4 border-red-500">
+        <h2 className="text-2xl font-bold text-red-600 mb-4">⛔ Account Suspended</h2>
+        <p className="text-gray-700 mb-4">
+          Your account has been permanently suspended for violating our safety policies, particularly regarding teen protection.
+        </p>
+        <p className="text-gray-600 text-sm mb-6">
+          Good Energy is committed to protecting minors. Predatory behavior will not be tolerated.
+        </p>
+        <button
+          onClick={logout}
+          className="bg-gray-400 text-white px-6 py-2 rounded"
+        >
+          Sign Out
+        </button>
+      </div>
+    </div>
+  );
+
+  if (view === 'wordFinder') return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
+      <div className="max-w-2xl mx-auto">
+        <button onClick={() => setView('feed')} className="mb-4 bg-gray-300 px-4 py-2 rounded">← Back to Feed</button>
+        <div className="bg-white p-6 rounded-xl text-center">
+          <h2 className="text-3xl font-bold mb-4">✨ Word Finder</h2>
+          <p className="text-gray-600 mb-4">Find hidden words in the grid (Premium Feature)</p>
+          <div className="grid grid-cols-4 gap-2 mb-6 bg-indigo-100 p-4 rounded">
+            {['L','O','V','E','C','A','L','M','J','O','Y','S','K','I','N','D'].map((letter, i) => (
+              <div key={i} className="bg-white p-3 rounded font-bold text-lg cursor-pointer hover:bg-indigo-200">{letter}</div>
+            ))}
+          </div>
+          <div className="text-4xl font-bold text-yellow-600 mb-4">Score: {wordScore}</div>
+          <p className="text-gray-600 mb-4">Words found: LOVE, CALM, JOY, KIND, CARE</p>
+          <button onClick={() => setWordScore(wordScore + 100)} className="w-full bg-indigo-600 text-white py-3 rounded mb-2">+ Find Word</button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-100 p-4">
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-xl font-bold">Good Energy</h1>
+        <h1 className="text-xl font-bold">Good Energy {isTeenPool && '👶'}</h1>
+        <div className="text-xs text-gray-500">{isTeenPool ? '🔒 Teen Pool' : isPremium ? '✨ Premium' : ''}</div>
         <div className="flex gap-4 items-center">
+          {isPremium && (
+            <button onClick={() => setView('wordFinder')} className="text-sm bg-yellow-500 text-white px-2 py-1 rounded">
+              🎮 Word Finder
+            </button>
+          )}
+          <button onClick={()=>setShowProfileEdit(true)}><User size={20}/></button>
           <a href="/legal.html" target="_blank" className="text-xs text-gray-500 hover:text-gray-700">Legal</a>
           <button onClick={logout}><LogOut/></button>
         </div>
       </div>
+
+      {showProfileEdit && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center mb-4">
+          <div className="bg-white p-6 rounded-xl w-80 text-center">
+            <h3 className="text-lg font-bold mb-4">Edit Avatar</h3>
+            <Avatar config={profile?.avatar} size={64}/>
+            <div className="my-4 space-y-2">
+              <label className="block">
+                <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden"/>
+                <span className="bg-indigo-600 text-white px-4 py-2 rounded cursor-pointer block">Upload Photo</span>
+              </label>
+            </div>
+            <p className="text-sm text-gray-600 mb-3">Or choose emoji:</p>
+            <div className="grid grid-cols-6 gap-2 mb-4">
+              {['😊','😍','🤔','😂','🎉','😎','🌟','💪','❤️','🔥','✨','🎨'].map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => updateAvatar(emoji)}
+                  className="text-2xl hover:scale-125"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowProfileEdit(false)}
+              className="bg-gray-300 px-4 py-2 rounded w-full"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       <textarea
         value={newPost}
@@ -318,6 +544,40 @@ export default function App() {
         className="w-full p-3 rounded mb-2"
         placeholder="Share something positive..."
       />
+
+      <label className="block mb-2">
+        <input 
+          type="file" 
+          accept="image/*,video/*" 
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => setNewPostMedia(ev.target?.result);
+            reader.readAsDataURL(file);
+          }}
+          className="hidden"
+        />
+        <span className="bg-gray-200 px-4 py-2 rounded cursor-pointer inline-block text-sm">
+          + Add Image/Video
+        </span>
+      </label>
+
+      {newPostMedia && (
+        <div className="mb-2 relative">
+          {newPostMedia.startsWith('data:video') ? (
+            <video src={newPostMedia} controls className="w-full rounded max-h-64"/>
+          ) : (
+            <img src={newPostMedia} alt="preview" className="w-full rounded max-h-64"/>
+          )}
+          <button
+            onClick={() => setNewPostMedia(null)}
+            className="absolute top-2 right-2 bg-red-500 text-white px-2 py-1 rounded text-sm"
+          >
+            Remove
+          </button>
+        </div>
+      )}
 
       {error && <div className="text-red-600 flex gap-1"><AlertCircle size={16}/>{error}</div>}
 
@@ -334,13 +594,47 @@ export default function App() {
 
           <p>{p.content}</p>
 
+          {p.mediaUrl && (
+            p.mediaUrl.startsWith('data:video') ? (
+              <video src={p.mediaUrl} controls className="w-full rounded my-2 max-h-64"/>
+            ) : (
+              <img src={p.mediaUrl} alt="post media" className="w-full rounded my-2 max-h-64"/>
+            )
+          )}
+
           <div className="flex gap-4 mt-2">
             <button onClick={()=>react(p)} className="flex gap-1">
               <Heart className={p.reactions.includes(user.uid) ? 'fill-red-500 text-red-500':''}/>
               {p.reactions.length}
             </button>
-            <MessageCircle/>
+            <button onClick={()=>setShowReactionPicker(showReactionPicker === p.id ? null : p.id)} className="text-xl">
+              😊
+            </button>
           </div>
+
+          {showReactionPicker === p.id && (
+            <div className="bg-gray-50 p-3 rounded mt-2 flex gap-2 flex-wrap">
+              {['👍','❤️','😂','🔥','😍','🎉','✨','💪','🌟','🙏','😢','👏'].map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => reactWithEmoji(p, emoji)}
+                  className="text-2xl hover:scale-125 cursor-pointer"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {Object.values(p.emojiReactions || {}).length > 0 && (
+            <div className="flex gap-1 mt-2 flex-wrap">
+              {Array.from(new Set(Object.values(p.emojiReactions))).map(emoji => (
+                <span key={emoji} className="bg-gray-100 px-2 py-1 rounded text-sm">
+                  {emoji}
+                </span>
+              ))}
+            </div>
+          )}
 
           <div className="flex gap-2 mt-2">
             <input
