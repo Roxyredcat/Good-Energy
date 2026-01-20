@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Good Energy — Legal</title>
+  <style>
+    :root{--bg:#f8fafc;--card:#ffffff;--muted:#6b7280;--accent:#4f46e5}
+    body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;line-height:1.6;margin:0;background:var(--bg);color:#111827}
+    .container{max-width:900px;margin:48px auto;padding:24px}
+    .card{background:var(--card);border-radius:12px;padding:28px;box-shadow:0 6px 24px rgba(15,23,42,0.06)}
+    h1{font-size:28px;margin:0 0 8px}
+    h2{font-size:20px;margin-top:20px}
+    p{color:var(--muted);margin:8px 0}
+    ul{margin:8px 0 8px 20px;color:var(--muted)}
+    a{color:var(--accent);text-decoration:none}
+    .meta{color:var(--muted);margin-bottom:18px}
+    pre,code{background:#f3f4f6;padding:6px 8px;border-radius:6px;color:#0f172a}
+    @media (max-width:640px){.container{margin:20px;padding:16px}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card" id="content">
+      <h1>Legal</h1>
+      <p class="meta">Loading legal document…</p>
+      <div id="doc"></div>
+      <div style="margin-top:20px;text-align:right"><a href="#" id="raw">Open raw</a></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>
+    async function loadLegal(){
+      try{
+        const res = await fetch('/LEGAL.md');
+        const txt = await res.text();
+        document.querySelector('.meta').textContent = '';
+        const html = marked.parse(txt);
+        document.getElementById('doc').innerHTML = html;
+        document.getElementById('raw').href = '/LEGAL.md';
+      }catch(e){
+        document.querySelector('.meta').textContent = 'Failed to load legal document.';
+      }
+    }
+    loadLegal();
+  </script>
+</body>
+</html>
