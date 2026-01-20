@@ -31,12 +31,13 @@ import {
 
 /* 🔴 REPLACE WITH YOUR FIREBASE CONFIG */
 const firebaseConfig = {
-  apiKey: "YOUR_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "XXXX",
-  appId: "XXXX"
+  apiKey: "AIzaSyDTjV0dJi079nMtD73Wou87tkVFXHbbIt0",
+  authDomain: "good-energy-8b1b4.firebaseapp.com",
+  projectId: "good-energy-8b1b4",
+  storageBucket: "good-energy-8b1b4.firebasestorage.app",
+  messagingSenderId: "307590356350",
+  appId: "1:307590356350:web:c2c28396ae9da84062672f",
+  measurementId: "G-M74W3HFN2M"
 };
 
 const app = initializeApp(firebaseConfig);
