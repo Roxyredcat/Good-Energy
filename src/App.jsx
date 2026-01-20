@@ -127,6 +127,7 @@ export default function App() {
   const [showWordFinder,setShowWordFinder] = useState(false);
   const [wordScore,setWordScore] = useState(0);
   const [showPassword,setShowPassword] = useState(false);
+  const [isSignupMode,setIsSignupMode] = useState(true);
 
   /* ===== AUTH LISTENER ===== */
 
@@ -411,7 +412,9 @@ export default function App() {
     <div className="min-h-screen flex items-center justify-center">
       <div className="bg-white p-8 rounded-xl w-96">
         <h2 className="text-2xl font-bold mb-4">Good Energy 🌿</h2>
-        <input placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} className="w-full mb-2 p-2 border"/>
+        {isSignupMode && (
+          <input placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} className="w-full mb-2 p-2 border"/>
+        )}
         <input placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full mb-2 p-2 border"/>
         
         <div className="relative mb-2">
@@ -431,25 +434,38 @@ export default function App() {
           </button>
         </div>
 
-        <div className="relative mb-2">
-          <input 
-            type={showPassword ? "text" : "password"} 
-            placeholder="Confirm Password" 
-            value={passwordConfirm} 
-            onChange={e=>setPasswordConfirm(e.target.value)} 
-            className="w-full p-2 border rounded"
-          />
-          {password && passwordConfirm && (
-            <span className={`absolute right-2 top-2 text-lg ${password === passwordConfirm ? '✅' : '❌'}`}>
-              {password === passwordConfirm ? '✅' : '❌'}
-            </span>
-          )}
-        </div>
+        {isSignupMode && (
+          <div className="relative mb-2">
+            <input 
+              type={showPassword ? "text" : "password"} 
+              placeholder="Confirm Password" 
+              value={passwordConfirm} 
+              onChange={e=>setPasswordConfirm(e.target.value)} 
+              className="w-full p-2 border rounded"
+            />
+            {password && passwordConfirm && (
+              <span className={`absolute right-2 top-2 text-lg ${password === passwordConfirm ? '✅' : '❌'}`}>
+                {password === passwordConfirm ? '✅' : '❌'}
+              </span>
+            )}
+          </div>
+        )}
 
-        <input type="number" placeholder="Age" min="13" max="120" value={age} onChange={e=>setAge(e.target.value)} className="w-full mb-4 p-2 border"/>
+        {isSignupMode && (
+          <input type="number" placeholder="Age" min="13" max="120" value={age} onChange={e=>setAge(e.target.value)} className="w-full mb-4 p-2 border"/>
+        )}
         {error && <div className="text-red-600 text-sm mb-2 p-2 bg-red-50 rounded">{error}</div>}
-        <button onClick={signUp} className="w-full bg-indigo-600 text-white py-2 rounded mb-2 font-bold">Sign Up</button>
-        <button onClick={login} className="w-full bg-gray-200 py-2 rounded">Already have account? Log In</button>
+        {isSignupMode ? (
+          <>
+            <button onClick={signUp} className="w-full bg-indigo-600 text-white py-2 rounded mb-2 font-bold">Sign Up</button>
+            <button onClick={()=>{setIsSignupMode(false); setError(''); setPasswordConfirm(''); setUsername(''); setAge('');}} className="w-full bg-gray-200 py-2 rounded">Already have account? Log In</button>
+          </>
+        ) : (
+          <>
+            <button onClick={login} className="w-full bg-indigo-600 text-white py-2 rounded mb-2 font-bold">Log In</button>
+            <button onClick={()=>{setIsSignupMode(true); setError(''); setPassword(''); setEmail('');}} className="w-full bg-gray-200 py-2 rounded">Need account? Sign Up</button>
+          </>
+        )}
       </div>
     </div>
   );
