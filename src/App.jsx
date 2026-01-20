@@ -176,29 +176,55 @@ export default function App() {
   /* ===== AUTH ===== */
 
   const signUp = async () => {
+    if (!username || !email || !password) {
+      setError('Please fill in all fields');
+      return;
+    }
     if (!age || age < 13) {
       setError('You must be at least 13 years old to use Good Energy');
       return;
     }
-    const cred = await createUserWithEmailAndPassword(auth,email,password);
-    const teenPool = parseInt(age) < 18;
-    await setDoc(doc(db,'profiles',cred.user.uid),{
-      username,
-      age: parseInt(age),
-      aura:'blue',
-      violations:0,
-      avatar:{ emoji:'😊', color:'bg-blue-500' },
-      isPremium:false,
-      isTeenPool:teenPool,
-      createdAt:serverTimestamp()
-    });
+    try {
+      const cred = await createUserWithEmailAndPassword(auth,email,password);
+      const teenPool = parseInt(age) < 18;
+      await setDoc(doc(db,'profiles',cred.user.uid),{
+        username,
+        age: parseInt(age),
+        aura:'blue',
+        violations:0,
+        avatar:{ emoji:'😊', color:'bg-blue-500' },
+        isPremium:false,
+        isTeenPool:teenPool,
+        createdAt:serverTimestamp()
+      });
+      setEmail('');
+      setPassword('');
+      setUsername('');
+      setAge('');
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Failed to create account');
+    }
   };
 
-  const login = async () =>
-    signInWithEmailAndPassword(auth,email,password);
+  const login = async () => {
+    try {
+      await signInWithEmailAndPassword(auth,email,password);
+      setEmail('');
+      setPassword('');
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Failed to login');
+    }
+  };
 
-  const logout = async () =>
-    signOut(auth);
+  const logout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      setError(err.message || 'Failed to logout');
+    }
+  };
 
   /* ===== PROFILE ===== */
 
@@ -206,15 +232,19 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const photoUrl = ev.target?.result;
-      const newAvatar = { ...profile.avatar, photoUrl };
-      await updateDoc(doc(db,'profiles',user.uid), { avatar: newAvatar });
-      setProfile(p => ({...p, avatar: newAvatar}));
-      setShowProfileEdit(false);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const photoUrl = ev.target?.result;
+        const newAvatar = { ...profile.avatar, photoUrl };
+        await updateDoc(doc(db,'profiles',user.uid), { avatar: newAvatar });
+        setProfile(p => ({...p, avatar: newAvatar}));
+        setShowProfileEdit(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      setError(err.message || 'Failed to upload avatar');
+    }
   };
 
   const updateAvatar = async (emoji) => {
