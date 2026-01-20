@@ -391,9 +391,14 @@ export default function App() {
   if (view === 'splash') return (
     <div className="min-h-screen flex flex-col items-center justify-center">
       <h1 className="text-5xl font-bold">Good Energy 🌿</h1>
-      <button onClick={()=>setView('auth')} className="mt-6 bg-indigo-600 text-white px-6 py-3 rounded-xl">
-        Get Started
-      </button>
+      <div className="mt-6 flex gap-4">
+        <button onClick={()=>setView('auth')} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold">
+          Get Started
+        </button>
+        <button onClick={()=>{setView('auth'); setEmail(''); setPassword(''); setPasswordConfirm(''); setUsername(''); setAge(''); setError('');}} className="bg-gray-600 text-white px-6 py-3 rounded-xl font-bold">
+          Log In
+        </button>
+      </div>
       <div className="mt-8 flex gap-4 text-sm text-gray-600">
         <a href="/legal.html" target="_blank" className="hover:text-indigo-600">Legal</a>
         <span>•</span>
