@@ -125,6 +125,7 @@ export default function App() {
   const [showReactionPicker,setShowReactionPicker] = useState(null);
   const [showWordFinder,setShowWordFinder] = useState(false);
   const [wordScore,setWordScore] = useState(0);
+  const [showPassword,setShowPassword] = useState(false);
 
   /* ===== AUTH LISTENER ===== */
 
@@ -406,8 +407,39 @@ export default function App() {
         <h2 className="text-2xl font-bold mb-4">Good Energy 🌿</h2>
         <input placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} className="w-full mb-2 p-2 border"/>
         <input placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full mb-2 p-2 border"/>
-        <input type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full mb-2 p-2 border"/>
-        <input type="password" placeholder="Confirm Password" value={passwordConfirm} onChange={e=>setPasswordConfirm(e.target.value)} className="w-full mb-2 p-2 border"/>
+        
+        <div className="relative mb-2">
+          <input 
+            type={showPassword ? "text" : "password"} 
+            placeholder="Password" 
+            value={password} 
+            onChange={e=>setPassword(e.target.value)} 
+            className="w-full p-2 border rounded"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-2 top-2 text-gray-500 hover:text-gray-700"
+          >
+            {showPassword ? '🙈 Hide' : '👁️ Show'}
+          </button>
+        </div>
+
+        <div className="relative mb-2">
+          <input 
+            type={showPassword ? "text" : "password"} 
+            placeholder="Confirm Password" 
+            value={passwordConfirm} 
+            onChange={e=>setPasswordConfirm(e.target.value)} 
+            className="w-full p-2 border rounded"
+          />
+          {password && passwordConfirm && (
+            <span className={`absolute right-2 top-2 text-lg ${password === passwordConfirm ? '✅' : '❌'}`}>
+              {password === passwordConfirm ? '✅' : '❌'}
+            </span>
+          )}
+        </div>
+
         <input type="number" placeholder="Age" min="13" max="120" value={age} onChange={e=>setAge(e.target.value)} className="w-full mb-4 p-2 border"/>
         {error && <div className="text-red-600 text-sm mb-2 p-2 bg-red-50 rounded">{error}</div>}
         <button onClick={signUp} className="w-full bg-indigo-600 text-white py-2 rounded mb-2 font-bold">Sign Up</button>
