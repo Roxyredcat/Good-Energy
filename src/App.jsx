@@ -128,6 +128,7 @@ export default function App() {
   const [wordScore,setWordScore] = useState(0);
   const [showPassword,setShowPassword] = useState(false);
   const [isSignupMode,setIsSignupMode] = useState(true);
+  const [showAvatarSetup,setShowAvatarSetup] = useState(false);
 
   /* ===== AUTH LISTENER ===== */
 
@@ -148,8 +149,10 @@ export default function App() {
         setProfile(data);
         setIsPremium(data.isPremium || false);
         setIsTeenPool(data.isTeenPool || false);
+        setShowAvatarSetup(false);
         setView('feed');
       } else {
+        setShowAvatarSetup(false);
         setView('onboarding');
       }
     });
@@ -197,11 +200,12 @@ export default function App() {
       return;
     }
     try {
-      console.log('Attempting signup with:', email);
+      console.log('🔴 SIGNUP STARTED - Email:', email);
       const cred = await createUserWithEmailAndPassword(auth,email,password);
-      console.log('User created:', cred.user.uid);
+      console.log('✅ Firebase Auth user created:', cred.user.uid);
       
       const teenPool = parseInt(age) < 18;
+      console.log('📝 About to create Firestore profile for:', cred.user.uid);
       await setDoc(doc(db,'profiles',cred.user.uid),{
         username,
         age: parseInt(age),
@@ -212,7 +216,7 @@ export default function App() {
         isTeenPool:teenPool,
         createdAt:serverTimestamp()
       });
-      console.log('Profile created');
+      console.log('✅ Firestore profile created successfully');
       setEmail('');
       setPassword('');
       setPasswordConfirm('');
@@ -220,8 +224,20 @@ export default function App() {
       setAge('');
       setError('');
     } catch (err) {
-      console.error('Signup error:', err);
-      setError(err.message || 'Failed to create account - check Firebase config');
+      console.error('❌ Signup error code:', err.code);
+      console.error('❌ Signup error message:', err.message);
+      console.error('❌ Full error:', err);
+      
+      // Provide helpful error messages
+      let errorMsg = err.message;
+      if (err.code === 'auth/email-already-in-use') {
+        errorMsg = 'This email already has an account. Try logging in or use a different email.';
+      } else if (err.code === 'auth/weak-password') {
+        errorMsg = 'Password should be at least 6 characters.';
+      } else if (err.code === 'permission-denied') {
+        errorMsg = '⚠️ Firestore permission denied. Check that Firestore database is in TEST MODE.';
+      }
+      setError(errorMsg);
     }
   };
 
@@ -231,7 +247,8 @@ export default function App() {
       return;
     }
     try {
-      console.log('Attempting login with:', email);
+      console.log('Attempting login with email:', email);
+      console.log('Password length:', password.length);
       await signInWithEmailAndPassword(auth,email,password);
       console.log('Login successful');
       setEmail('');
@@ -239,8 +256,18 @@ export default function App() {
       setPasswordConfirm('');
       setError('');
     } catch (err) {
-      console.error('Login error:', err);
-      setError(err.message || 'Failed to login');
+      console.error('Login error code:', err.code);
+      console.error('Login error message:', err.message);
+      console.error('Full error:', err);
+      
+      // Provide helpful error messages
+      let errorMsg = err.message;
+      if (err.code === 'auth/invalid-credential') {
+        errorMsg = 'Email or password is incorrect. Try signing up if you don\'t have an account.';
+      } else if (err.code === 'auth/user-not-found') {
+        errorMsg = 'No account found with this email. Try signing up.';
+      }
+      setError(errorMsg);
     }
   };
 
@@ -479,7 +506,7 @@ export default function App() {
           onClick={async () => {
             await updateDoc(doc(db,'profiles',user.uid), { isPremium:false });
             setIsPremium(false);
-            setView('feed');
+            setShowAvatarSetup(true);
           }}
           className="w-full bg-gray-200 text-gray-800 py-2 rounded mb-2"
         >
@@ -513,7 +540,7 @@ export default function App() {
           onClick={async () => {
             await updateDoc(doc(db,'profiles',user.uid), { isPremium:true });
             setIsPremium(true);
-            setView('feed');
+            setShowAvatarSetup(true);
           }}
           className="w-full bg-yellow-500 text-white py-2 rounded mb-2 font-bold"
         >
@@ -523,7 +550,7 @@ export default function App() {
           onClick={async () => {
             await updateDoc(doc(db,'profiles',user.uid), { isPremium:false });
             setIsPremium(false);
-            setView('feed');
+            setShowAvatarSetup(true);
           }}
           className="w-full bg-gray-200 py-2 rounded"
         >
@@ -572,6 +599,48 @@ export default function App() {
           className="bg-gray-400 text-white px-6 py-2 rounded"
         >
           Sign Out
+        </button>
+      </div>
+    </div>
+  );
+
+  if (showAvatarSetup && user && profile) return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-50 p-4">
+      <div className="bg-white p-8 rounded-xl w-96 text-center">
+        <h2 className="text-2xl font-bold mb-4">Set Your Profile 🎨</h2>
+        <p className="text-gray-600 mb-6">Upload a photo or choose an emoji as your avatar</p>
+        
+        <div className="mb-6">
+          <Avatar config={profile?.avatar} size={96}/>
+        </div>
+
+        <div className="space-y-3 mb-6">
+          <label className="block">
+            <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden"/>
+            <span className="bg-indigo-600 text-white px-4 py-2 rounded cursor-pointer block hover:bg-indigo-700">
+              📸 Upload Photo
+            </span>
+          </label>
+        </div>
+
+        <p className="text-sm text-gray-600 mb-4">Or choose emoji:</p>
+        <div className="grid grid-cols-6 gap-2 mb-6">
+          {['😊','😍','🤔','😂','🎉','😎','🌟','💪','❤️','🔥','✨','🎨','😇','🤝','💧','⭐','🌈','🦄','🤖','🌻'].map(emoji => (
+            <button
+              key={emoji}
+              onClick={() => {updateAvatar(emoji); setShowAvatarSetup(false);}}
+              className="text-3xl hover:scale-125 transition"
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={() => setShowAvatarSetup(false)}
+          className="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700"
+        >
+          Done
         </button>
       </div>
     </div>
@@ -675,9 +744,9 @@ export default function App() {
       {newPostMedia && (
         <div className="mb-2 relative">
           {newPostMedia.startsWith('data:video') ? (
-            <video src={newPostMedia} controls className="w-full rounded max-h-64"/>
+            <video src={newPostMedia} controls className="w-full rounded max-h-64 object-contain"/>
           ) : (
-            <img src={newPostMedia} alt="preview" className="w-full rounded max-h-64"/>
+            <img src={newPostMedia} alt="preview" className="w-full rounded max-h-64 object-contain"/>
           )}
           <button
             onClick={() => setNewPostMedia(null)}
@@ -705,9 +774,9 @@ export default function App() {
 
           {p.mediaUrl && (
             p.mediaUrl.startsWith('data:video') ? (
-              <video src={p.mediaUrl} controls className="w-full rounded my-2 max-h-64"/>
+              <video src={p.mediaUrl} controls className="w-full rounded my-2 max-h-64 object-contain"/>
             ) : (
-              <img src={p.mediaUrl} alt="post media" className="w-full rounded my-2 max-h-64"/>
+              <img src={p.mediaUrl} alt="post media" className="w-full rounded my-2 max-h-64 object-contain"/>
             )
           )}
 
@@ -723,7 +792,7 @@ export default function App() {
 
           {showReactionPicker === p.id && (
             <div className="bg-gray-50 p-3 rounded mt-2 flex gap-2 flex-wrap">
-              {['👍','❤️','😂','🔥','😍','🎉','✨','💪','🌟','🙏','😢','👏'].map(emoji => (
+              {['👍','❤️','😂','🔥','😍','🎉','✨','💪','🌟','🙏','😢','👏','😮','🤔','😭','🎈','🌻','🤝','💧','⭐'].map(emoji => (
                 <button
                   key={emoji}
                   onClick={() => reactWithEmoji(p, emoji)}
