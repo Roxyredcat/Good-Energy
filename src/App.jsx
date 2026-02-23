@@ -695,10 +695,10 @@ export default function App() {
     <div className="min-h-screen flex flex-col items-center justify-center">
       <h1 className="text-5xl font-bold">Good Energy 🌿</h1>
       <div className="mt-6 flex gap-4">
-        <button onClick={()=>setView('signup')} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold">
+        <button onClick={()=>{setView('signup'); setError(''); setEmail(''); setPassword('');}} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold">
           Get Started
         </button>
-        <button onClick={()=>setView('login')} className="bg-gray-600 text-white px-6 py-3 rounded-xl font-bold">
+        <button onClick={()=>{setView('login'); setError(''); setEmail(''); setPassword('');}} className="bg-gray-600 text-white px-6 py-3 rounded-xl font-bold">
           Log In
         </button>
       </div>
@@ -1290,9 +1290,9 @@ export default function App() {
 
           {p.mediaUrl && (
             p.mediaUrl.startsWith('data:video') ? (
-              <video src={p.mediaUrl} controls className="w-full rounded my-2 max-h-64 object-cover"/>
+              <video src={p.mediaUrl} controls className="w-full rounded my-2 max-h-64 object-contain"/>
             ) : (
-              <img src={p.mediaUrl} alt="post media" className="w-full rounded my-2 max-h-64 object-cover"/>
+              <img src={p.mediaUrl} alt="post media" className="w-full rounded my-2 max-h-64 object-contain"/>
             )
           )}
 
