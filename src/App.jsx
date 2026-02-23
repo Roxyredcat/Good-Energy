@@ -145,6 +145,10 @@ export default function App() {
   const [showSettings,setShowSettings] = useState(false);
   const [showDeleteConfirm,setShowDeleteConfirm] = useState(false);
   const [deletePassword,setDeletePassword] = useState('');
+  const [selectedProfileUser,setSelectedProfileUser] = useState(null);
+  const [chatWith,setChatWith] = useState(null);
+  const [messages,setMessages] = useState({});
+  const [newMessage,setNewMessage] = useState('');
 
   /* ===== AUTH LISTENER ===== */
 
@@ -204,6 +208,33 @@ export default function App() {
       setPosts(loaded.filter(Boolean));
     });
   }, [user, isTeenPool]);
+
+  /* ===== MESSAGES LISTENER ===== */
+
+  useEffect(() => {
+    if (!user || !chatWith) return;
+    const conversationId = [user.uid, chatWith].sort().join('_');
+    const q = query(collection(db,'messages',conversationId,'texts'), orderBy('createdAt','asc'));
+    return onSnapshot(q, snap => {
+      const msgs = snap.docs.map(d => d.data());
+      setMessages(prev => ({...prev, [conversationId]: msgs}));
+    });
+  }, [user, chatWith]);
+
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !chatWith) return;
+    const conversationId = [user.uid, chatWith].sort().join('_');
+    try {
+      await addDoc(collection(db,'messages',conversationId,'texts'), {
+        senderId: user.uid,
+        text: newMessage,
+        createdAt: serverTimestamp()
+      });
+      setNewMessage('');
+    } catch (err) {
+      console.error('Message error:', err);
+    }
+  };
 
   /* ===== AUTH ===== */
 
@@ -1040,6 +1071,51 @@ export default function App() {
     </div>
   );
 
+  if (selectedProfileUser) return (
+    <div className="min-h-screen bg-gray-100 p-4">
+      <button onClick={() => setSelectedProfileUser(null)} className="mb-4 bg-gray-300 px-4 py-2 rounded">← Back</button>
+      <div className="max-w-md mx-auto bg-white p-6 rounded-xl">
+        <div className="text-center mb-6">
+          <Avatar config={selectedProfileUser.avatar} size={96}/>
+          <h2 className="text-2xl font-bold mt-4">{selectedProfileUser.username}</h2>
+          <p className="text-gray-600">Age {selectedProfileUser.age}</p>
+        </div>
+        <button
+          onClick={() => {setChatWith(selectedProfileUser.uid); setView('chat');}}
+          className="w-full bg-blue-600 text-white py-2 rounded mb-2 font-bold"
+        >
+          💬 Send Message
+        </button>
+      </div>
+    </div>
+  );
+
+  if (view === 'chat' && chatWith) return (
+    <div className="min-h-screen bg-gray-100 flex flex-col p-4">
+      <button onClick={() => {setChatWith(null); setView('feed');}} className="mb-2 bg-gray-300 px-4 py-2 rounded w-fit">← Back</button>
+      <div className="max-w-2xl mx-auto w-full bg-white rounded-xl flex flex-col flex-1">
+        <div className="p-4 border-b font-bold">Chat</div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {messages[([user.uid, chatWith].sort().join('_'))] && messages[([user.uid, chatWith].sort().join('_'))].map((msg, i) => (
+            <div key={i} className={`p-2 rounded ${msg.senderId === user.uid ? 'bg-blue-100 ml-auto max-w-xs' : 'bg-gray-100'}`}>
+              {msg.text}
+            </div>
+          ))}
+        </div>
+        <div className="p-4 border-t flex gap-2">
+          <input
+            value={newMessage}
+            onChange={e => setNewMessage(e.target.value)}
+            onKeyPress={e => e.key === 'Enter' && sendMessage()}
+            placeholder="Type a message..."
+            className="flex-1 p-2 border rounded"
+          />
+          <button onClick={sendMessage} className="bg-blue-600 text-white px-4 py-2 rounded"><Send/></button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-100 p-4">
       <div className="flex justify-between items-center mb-4">
@@ -1282,7 +1358,9 @@ export default function App() {
       {posts.map(p=>(
         <div key={p.id} className="bg-white p-4 rounded mb-4">
           <div className="flex gap-2 items-center mb-2">
-            <Avatar config={p.profiles?.avatar}/>
+            <button onClick={() => setSelectedProfileUser({...p.profiles, uid: p.authorId})} className="hover:opacity-70">
+              <Avatar config={p.profiles?.avatar}/>
+            </button>
             <b>{p.profiles?.username}</b>
           </div>
 
