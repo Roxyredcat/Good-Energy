@@ -39,7 +39,6 @@ import {
   getDownloadURL
 } from 'firebase/storage';
 
-/* 🔴 REPLACE WITH YOUR FIREBASE CONFIG */
 const firebaseConfig = {
   apiKey: "AIzaSyDTjV0dJi079nMtD73Wou87tkVFXHbbIt0",
   authDomain: "good-energy-8b1b4.firebaseapp.com",
@@ -66,7 +65,6 @@ const ModerationEngine = {
     const t = text.toLowerCase().trim();
     if (!t) return { allowed:false, reason:'Message cannot be empty' };
 
-    // Predatory language detection for teen pool
     if (isTeenPool) {
       const hasPredatory = this.predatory.some(p => t.includes(p));
       if (hasPredatory) {
@@ -87,22 +85,22 @@ const ModerationEngine = {
 /* ================= AVATAR ================= */
 
 const Avatar = ({ config={}, size=48 }) => {
-  if (config.photoUrl) {
+  if (config && config.photoUrl) {
     return (
       <img
         src={config.photoUrl}
         alt="avatar"
-        className="rounded-full object-cover"
-        style={{ width:size, height:size }}
+        className="rounded-full object-cover flex-shrink-0"
+        style={{ width:size, height:size, minWidth:size, minHeight:size }}
       />
     );
   }
   return (
     <div
-      className={`${config.color || 'bg-blue-500'} rounded-full flex items-center justify-center`}
-      style={{ width:size, height:size }}
+      className={`${(config && config.color) || 'bg-blue-500'} rounded-full flex items-center justify-center flex-shrink-0`}
+      style={{ width:size, height:size, minWidth:size, minHeight:size }}
     >
-      <span style={{ fontSize:size*0.6 }}>{config.emoji || '😊'}</span>
+      <span style={{ fontSize:size*0.5 }}>{(config && config.emoji) || '😊'}</span>
     </div>
   );
 };
@@ -145,8 +143,10 @@ export default function App() {
   const [showSettings,setShowSettings] = useState(false);
   const [showDeleteConfirm,setShowDeleteConfirm] = useState(false);
   const [deletePassword,setDeletePassword] = useState('');
+
   const [selectedProfileUser,setSelectedProfileUser] = useState(null);
   const [chatWith,setChatWith] = useState(null);
+  const [chatWithProfile,setChatWithProfile] = useState(null);
   const [messages,setMessages] = useState({});
   const [newMessage,setNewMessage] = useState('');
 
@@ -172,14 +172,12 @@ export default function App() {
         setIsPremium(data.isPremium || false);
         setIsTeenPool(data.isTeenPool || false);
         setShowAvatarSetup(false);
-        // New users go to onboarding first
         if (data.isNewUser) {
           setView('onboarding');
         } else {
           setView('feed');
         }
       } else {
-        // Profile doesn't exist yet - go to onboarding to create it
         setProfile(null);
         setShowAvatarSetup(false);
         setView('onboarding');
@@ -197,12 +195,11 @@ export default function App() {
       const loaded = await Promise.all(
         snap.docs.map(async d => {
           const data = d.data();
-          const p = await getDoc(doc(db,'profiles',data.authorId));
-          // Filter: teens only see teen pool posts, adults see all
+          const pSnap = await getDoc(doc(db,'profiles',data.authorId));
           if (isTeenPool && !data.isTeenPool && data.authorId !== user.uid) {
             return null;
           }
-          return { id:d.id, ...data, profiles:p.data() };
+          return { id:d.id, ...data, profiles: pSnap.exists() ? pSnap.data() : null };
         })
       );
       setPosts(loaded.filter(Boolean));
@@ -216,10 +213,17 @@ export default function App() {
     const conversationId = [user.uid, chatWith].sort().join('_');
     const q = query(collection(db,'messages',conversationId,'texts'), orderBy('createdAt','asc'));
     return onSnapshot(q, snap => {
-      const msgs = snap.docs.map(d => d.data());
+      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setMessages(prev => ({...prev, [conversationId]: msgs}));
     });
   }, [user, chatWith]);
+
+  const openChat = (profileData, uid) => {
+    setChatWith(uid);
+    setChatWithProfile(profileData);
+    setSelectedProfileUser(null);
+    setView('chat');
+  };
 
   const sendMessage = async () => {
     if (!newMessage.trim() || !chatWith) return;
@@ -227,12 +231,13 @@ export default function App() {
     try {
       await addDoc(collection(db,'messages',conversationId,'texts'), {
         senderId: user.uid,
+        senderName: profile?.username || 'Unknown',
         text: newMessage,
         createdAt: serverTimestamp()
       });
       setNewMessage('');
     } catch (err) {
-      console.error('Message error:', err);
+      setError('Failed to send message: ' + err.message);
     }
   };
 
@@ -256,7 +261,6 @@ export default function App() {
       return;
     }
     
-    // Check if parental consent needed
     const ageNum = parseInt(age);
     if (ageNum < 18) {
       if (!parentalEmail) {
@@ -271,12 +275,8 @@ export default function App() {
     }
     
     try {
-      console.log('🔴 SIGNUP STARTED - Email:', email);
       const cred = await createUserWithEmailAndPassword(auth,email,password);
-      console.log('✅ Firebase Auth user created:', cred.user.uid);
-      
       const teenPool = ageNum < 18;
-      console.log('📝 About to create Firestore profile for:', cred.user.uid);
       await setDoc(doc(db,'profiles',cred.user.uid),{
         username,
         age: ageNum,
@@ -290,7 +290,6 @@ export default function App() {
         parentalVerified: false,
         createdAt:serverTimestamp()
       });
-      console.log('✅ Firestore profile created successfully');
       setEmail('');
       setPassword('');
       setPasswordConfirm('');
@@ -299,24 +298,16 @@ export default function App() {
       setParentalEmail('');
       setError('');
       
-      // If minor, show pending parental consent screen
       if (ageNum < 18) {
         setShowParentalConsent(false);
         setView('parental-pending');
       }
     } catch (err) {
-      console.error('❌ Signup error code:', err.code);
-      console.error('❌ Signup error message:', err.message);
-      console.error('❌ Full error:', err);
-      
-      // Provide helpful error messages
       let errorMsg = err.message;
       if (err.code === 'auth/email-already-in-use') {
         errorMsg = 'This email already has an account. Try logging in or use a different email.';
       } else if (err.code === 'auth/weak-password') {
         errorMsg = 'Password should be at least 6 characters.';
-      } else if (err.code === 'permission-denied') {
-        errorMsg = '⚠️ Firestore permission denied. Check that Firestore database is in TEST MODE.';
       }
       setError(errorMsg);
     }
@@ -328,25 +319,15 @@ export default function App() {
       return;
     }
     try {
-      console.log('Attempting login with email:', email);
-      console.log('Password length:', password.length);
       await signInWithEmailAndPassword(auth,email,password);
-      console.log('Login successful');
       setEmail('');
       setPassword('');
       setPasswordConfirm('');
       setError('');
     } catch (err) {
-      console.error('Login error code:', err.code);
-      console.error('Login error message:', err.message);
-      console.error('Full error:', err);
-      
-      // Provide helpful error messages
       let errorMsg = err.message;
-      if (err.code === 'auth/invalid-credential') {
-        errorMsg = 'Email or password is incorrect. Try signing up if you don\'t have an account.';
-      } else if (err.code === 'auth/user-not-found') {
-        errorMsg = 'No account found with this email. Try signing up.';
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found') {
+        errorMsg = "Email or password is incorrect. Try signing up if you don't have an account.";
       }
       setError(errorMsg);
     }
@@ -364,84 +345,47 @@ export default function App() {
 
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0];
-    if (!file) {
-      console.log('No file selected');
-      return;
-    }
-
-    console.log('📸 Photo upload started, file:', file.name, file.type, file.size);
+    if (!file) return;
 
     try {
       const reader = new FileReader();
       reader.onload = async (ev) => {
-        try {
-          let photoUrl = ev.target?.result;
-          console.log('📸 Photo converted to data URL, original length:', photoUrl?.length);
+        let photoUrl = ev.target?.result;
+        const img = new Image();
+        img.onload = async () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          const maxSize = 200;
+          let width = img.width;
+          let height = img.height;
           
-          // Compress image by resizing to max 200x200
-          const img = new Image();
-          img.onload = async () => {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            const maxSize = 200;
-            let width = img.width;
-            let height = img.height;
-            
-            if (width > height) {
-              if (width > maxSize) {
-                height *= maxSize / width;
-                width = maxSize;
-              }
-            } else {
-              if (height > maxSize) {
-                width *= maxSize / height;
-                height = maxSize;
-              }
-            }
-            
-            canvas.width = width;
-            canvas.height = height;
-            ctx.drawImage(img, 0, 0, width, height);
-            photoUrl = canvas.toDataURL('image/jpeg', 0.7);
-            console.log('📸 Compressed to:', photoUrl.length, 'bytes');
-            
-            console.log('📸 Updating Firestore profile with compressed photo');
-            await updateDoc(doc(db,'profiles',user.uid), { 'avatar.photoUrl': photoUrl });
-            console.log('✅ Avatar updated in Firestore');
-            
-            setProfile(p => ({...p, avatar: {...(p.avatar || {}), photoUrl}}));
-            console.log('✅ Local profile state updated');
-            
-            if (showAvatarSetup) {
-              console.log('Closing avatar setup, going to feed');
-              setShowAvatarSetup(false);
-              setView('feed');
-            } else {
-              console.log('Closing edit avatar modal');
-              setShowProfileEdit(false);
-            }
-            setError('');
-          };
-          img.onerror = () => {
-            console.error('❌ Image loading error');
-            setError('Failed to process image');
-          };
-          img.src = photoUrl;
-        } catch (err) {
-          console.error('❌ Error updating Firestore:', err);
-          console.error('Error code:', err.code);
-          console.error('Error message:', err.message);
-          setError('Failed to save avatar: ' + err.message);
-        }
-      };
-      reader.onerror = (err) => {
-        console.error('❌ FileReader error:', err);
-        setError('Failed to read file');
+          if (width > height) {
+            if (width > maxSize) { height *= maxSize / width; width = maxSize; }
+          } else {
+            if (height > maxSize) { width *= maxSize / height; height = maxSize; }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          ctx.drawImage(img, 0, 0, width, height);
+          photoUrl = canvas.toDataURL('image/jpeg', 0.7);
+          
+          await updateDoc(doc(db,'profiles',user.uid), { 'avatar.photoUrl': photoUrl });
+          setProfile(p => ({...p, avatar: {...(p.avatar || {}), photoUrl}}));
+          
+          if (showAvatarSetup) {
+            setShowAvatarSetup(false);
+            setView('feed');
+          } else {
+            setShowProfileEdit(false);
+          }
+          setError('');
+        };
+        img.src = photoUrl;
       };
       reader.readAsDataURL(file);
     } catch (err) {
-      console.error('❌ Avatar upload error:', err);
-      setError(err.message || 'Failed to upload avatar');
+      setError('Failed to save avatar: ' + err.message);
     }
   };
 
@@ -449,7 +393,6 @@ export default function App() {
     const newAvatar = { emoji, color:'bg-blue-500' };
     await updateDoc(doc(db,'profiles',user.uid), { avatar: newAvatar });
     setProfile(p => ({...p, avatar: newAvatar}));
-    // Don't close modal - let user see the change immediately
   };
 
   /* ===== POSTS ===== */
@@ -472,7 +415,6 @@ export default function App() {
       setNewPostMedia(null);
       setError('');
     } catch (err) {
-      console.error('Post creation error:', err);
       setError('Failed to create post: ' + err.message);
     }
   };
@@ -480,14 +422,10 @@ export default function App() {
   const comment = async (postId,text) => {
     const check = ModerationEngine.check(text, isTeenPool);
     if (!check.allowed) {
-      if (isTeenPool) {
-        // Teen violations are more serious - ban on predatory behavior
-        const isPredatory = check.reason.includes('Unsafe message');
-        if (isPredatory) {
-          await updateDoc(doc(db,'profiles',user.uid), { violations: 999, aura:'banned' });
-          setError('Your account has been suspended for safety violations.');
-          return;
-        }
+      if (isTeenPool && check.reason.includes('Unsafe message')) {
+        await updateDoc(doc(db,'profiles',user.uid), { violations: 999, aura:'banned' });
+        setError('Your account has been suspended for safety violations.');
+        return;
       }
       await violation();
       return setError(check.reason);
@@ -502,9 +440,9 @@ export default function App() {
   };
 
   const react = async (post) => {
-    const ref = doc(db,'posts',post.id);
+    const r = doc(db,'posts',post.id);
     const has = post.reactions.includes(user.uid);
-    await updateDoc(ref,{
+    await updateDoc(r,{
       reactions: has
         ? post.reactions.filter(id=>id!==user.uid)
         : arrayUnion(user.uid)
@@ -512,16 +450,16 @@ export default function App() {
   };
 
   const reactWithEmoji = async (post, emoji) => {
-    const ref = doc(db,'posts',post.id);
+    const r = doc(db,'posts',post.id);
     const reactionKey = `${user.uid}_${emoji}`;
     const hasReaction = post.emojiReactions?.[reactionKey];
     
     if (hasReaction) {
       const updated = {...post.emojiReactions};
       delete updated[reactionKey];
-      await updateDoc(ref, { emojiReactions: updated });
+      await updateDoc(r, { emojiReactions: updated });
     } else {
-      await updateDoc(ref, {
+      await updateDoc(r, {
         emojiReactions: { ...post.emojiReactions, [reactionKey]: emoji }
       });
     }
@@ -533,11 +471,7 @@ export default function App() {
   const violation = async () => {
     const v = profile.violations + 1;
     const aura = v >= 3 ? 'black' : v === 1 ? 'orange' : 'blue';
-
-    await updateDoc(doc(db,'profiles',user.uid),{
-      violations:v,
-      aura
-    });
+    await updateDoc(doc(db,'profiles',user.uid),{ violations:v, aura });
     setProfile(p => ({...p,violations:v,aura}));
     if (v >= 3) setView('reset');
   };
@@ -549,49 +483,31 @@ export default function App() {
       setError('Please enter your password to confirm');
       return;
     }
-
     try {
       setError('');
-      
-      // Soft delete: mark account as deleted
-      const deletedAt = new Date().toISOString();
       await updateDoc(doc(db,'profiles',user.uid), {
         isDeleted: true,
-        deletedAt,
+        deletedAt: new Date().toISOString(),
         username: '[deleted]',
         email: '[deleted]'
       });
-
-      // Delete all user's posts
       const postsSnap = await getDocs(query(collection(db,'posts'), where('authorId','==',user.uid)));
       for (const postDoc of postsSnap.docs) {
         await deleteDoc(doc(db,'posts',postDoc.id));
       }
-
-      console.log('✅ Account marked for deletion. Will be permanently purged in 30 days.');
       setShowDeleteConfirm(false);
       setDeletePassword('');
-      
-      // Sign out user
       await logout();
     } catch (err) {
-      console.error('Delete error:', err);
       setError('Failed to delete account: ' + err.message);
     }
   };
 
   const exportData = async () => {
     try {
-      const profileData = profile;
       const postsSnap = await getDocs(query(collection(db,'posts'), where('authorId','==',user.uid)));
-      const posts = postsSnap.docs.map(d => d.data());
-
-      const exportObj = {
-        profile: profileData,
-        posts,
-        exportedAt: new Date().toISOString()
-      };
-
+      const userPosts = postsSnap.docs.map(d => d.data());
+      const exportObj = { profile, posts: userPosts, exportedAt: new Date().toISOString() };
       const dataStr = JSON.stringify(exportObj, null, 2);
       const dataBlob = new Blob([dataStr], { type: 'application/json' });
       const url = URL.createObjectURL(dataBlob);
@@ -600,19 +516,14 @@ export default function App() {
       link.download = `good-energy-export-${Date.now()}.json`;
       link.click();
       URL.revokeObjectURL(url);
-
       setError('');
-      // Update export timestamp
-      await updateDoc(doc(db,'profiles',user.uid), {
-        dataExportedAt: serverTimestamp()
-      });
+      await updateDoc(doc(db,'profiles',user.uid), { dataExportedAt: serverTimestamp() });
     } catch (err) {
-      console.error('Export error:', err);
       setError('Failed to export data: ' + err.message);
     }
   };
 
-  /* ===== PHASE 2: SUPPORT & VERIFICATION ===== */
+  /* ===== SUPPORT ===== */
 
   const [supportVisible, setSupportVisible] = useState(false);
   const [supportForm, setSupportForm] = useState({category: 'report', subject: '', message: ''});
@@ -624,10 +535,8 @@ export default function App() {
       setError('Please fill in all fields');
       return;
     }
-
     setSupportSubmitting(true);
     try {
-      // Save to support_tickets collection
       await addDoc(collection(db,'support_tickets'), {
         userId: user.uid,
         email: user.email,
@@ -637,7 +546,6 @@ export default function App() {
         status: 'open',
         createdAt: serverTimestamp()
       });
-
       setSupportForm({category:'report',subject:'',message:''});
       setSupportVisible(false);
       setError('');
@@ -649,13 +557,11 @@ export default function App() {
     }
   };
 
-  // Handle parental email verification from link
   useEffect(() => {
     if (view === 'verify-parent') {
       const params = new URLSearchParams(window.location.search);
       const token = params.get('token');
       const userId = params.get('userId');
-      
       if (token && userId) {
         (async () => {
           try {
@@ -666,15 +572,12 @@ export default function App() {
                 setVerifyTokenError('Verification link expired. Please request a new one.');
                 return;
               }
-
-              // Mark as verified
               await updateDoc(doc(db,'profiles',userId), {
                 parentalVerified: true,
                 parentalVerifiedAt: serverTimestamp(),
                 parentalVerificationToken: '',
                 parentalTokenExpiresAt: null
               });
-
               setVerifyTokenError('');
               setView('splash');
             } else {
@@ -687,16 +590,6 @@ export default function App() {
       }
     }
   }, [view]);
-
-  // Enforce aura privacy - don't send aura in public profiles
-  const getPublicProfile = (profile) => {
-    if (!profile) return null;
-    return {
-      username: profile.username,
-      avatar: profile.avatar,
-      // Aura NOT included for privacy
-    };
-  };
 
   /* ===== RESET GAME ===== */
 
@@ -713,27 +606,31 @@ export default function App() {
     setBoard(b);
     const w=win(b);
     if (w || b.every(Boolean)) {
-      setTimeout(()=>{
-        setBoard(Array(9).fill(null));
-        setPlayer('X');
-      },300);
+      setTimeout(()=>{ setBoard(Array(9).fill(null)); setPlayer('X'); },300);
     } else setPlayer(p=>p==='X'?'O':'X');
   };
 
-  /* ================= UI ================= */
+  /* ================= VIEWS ================= */
 
   if (view === 'splash') return (
-    <div className="min-h-screen flex flex-col items-center justify-center">
-      <h1 className="text-5xl font-bold">Good Energy 🌿</h1>
-      <div className="mt-6 flex gap-4">
-        <button onClick={()=>{setView('signup'); setError(''); setEmail(''); setPassword('');}} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-50">
+      <h1 className="text-5xl font-bold mb-2">Good Energy 🌿</h1>
+      <p className="text-gray-500 mb-8">A positive space for everyone</p>
+      <div className="flex gap-4">
+        <button
+          onClick={()=>{setView('signup'); setError(''); setEmail(''); setPassword('');}}
+          className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold text-lg hover:bg-indigo-700"
+        >
           Get Started
         </button>
-        <button onClick={()=>{setView('login'); setError(''); setEmail(''); setPassword('');}} className="bg-gray-600 text-white px-6 py-3 rounded-xl font-bold">
+        <button
+          onClick={()=>{setView('login'); setError(''); setEmail(''); setPassword('');}}
+          className="bg-white text-indigo-600 border-2 border-indigo-600 px-8 py-3 rounded-xl font-bold text-lg hover:bg-indigo-50"
+        >
           Log In
         </button>
       </div>
-      <div className="mt-8 flex gap-4 text-sm text-gray-600">
+      <div className="mt-10 flex gap-4 text-sm text-gray-500">
         <a href="/legal.html" target="_blank" className="hover:text-indigo-600">Legal</a>
         <span>•</span>
         <a href="/legal.html" target="_blank" className="hover:text-indigo-600">Privacy</a>
@@ -742,112 +639,97 @@ export default function App() {
   );
 
   if (view === 'signup') return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="bg-white p-8 rounded-xl w-96">
-        <h2 className="text-2xl font-bold mb-4">Create Account 🌿</h2>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-50">
+      <div className="bg-white p-8 rounded-xl w-96 shadow-lg">
+        <h2 className="text-2xl font-bold mb-1">Create Account 🌿</h2>
+        <p className="text-gray-500 text-sm mb-5">Join Good Energy today</p>
         <input placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} className="w-full mb-2 p-2 border rounded"/>
-        <input placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full mb-2 p-2 border rounded"/>
-        
+        <input placeholder="Email" type="email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full mb-2 p-2 border rounded"/>
         <div className="relative mb-2">
-          <input 
-            type={showPassword ? "text" : "password"} 
-            placeholder="Password" 
-            value={password} 
-            onChange={e=>setPassword(e.target.value)} 
-            className="w-full p-2 border rounded"
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-2 top-2 text-gray-500 hover:text-gray-700"
-          >
-            {showPassword ? '🙈 Hide' : '👁️ Show'}
+          <input type={showPassword ? "text" : "password"} placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full p-2 border rounded pr-20"/>
+          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-2 text-xs text-gray-500">
+            {showPassword ? 'Hide' : 'Show'}
           </button>
         </div>
-
         <div className="relative mb-2">
-          <input 
-            type={showPassword ? "text" : "password"} 
-            placeholder="Confirm Password" 
-            value={passwordConfirm} 
-            onChange={e=>setPasswordConfirm(e.target.value)} 
-            className="w-full p-2 border rounded"
-          />
+          <input type={showPassword ? "text" : "password"} placeholder="Confirm Password" value={passwordConfirm} onChange={e=>setPasswordConfirm(e.target.value)} className="w-full p-2 border rounded pr-8"/>
           {password && passwordConfirm && (
-            <span className={`absolute right-2 top-2 text-lg ${password === passwordConfirm ? '✅' : '❌'}`}>
+            <span className="absolute right-2 top-2 text-sm">
               {password === passwordConfirm ? '✅' : '❌'}
             </span>
           )}
         </div>
-
-        <input type="number" placeholder="Age" min="13" max="120" value={age} onChange={e=>setAge(e.target.value)} className="w-full mb-4 p-2 border rounded"/>
-        
+        <input type="number" placeholder="Age" min="13" max="120" value={age} onChange={e=>setAge(e.target.value)} className="w-full mb-3 p-2 border rounded"/>
         {age && parseInt(age) < 18 && (
-          <input placeholder="Parent/Guardian Email" value={parentalEmail} onChange={e=>setParentalEmail(e.target.value)} className="w-full mb-4 p-2 border rounded"/>
+          <div className="mb-3">
+            <p className="text-xs text-orange-600 mb-1">⚠️ Users under 18 need parental consent</p>
+            <input placeholder="Parent/Guardian Email" type="email" value={parentalEmail} onChange={e=>setParentalEmail(e.target.value)} className="w-full p-2 border border-orange-300 rounded"/>
+          </div>
         )}
-        
         {error && <div className="text-red-600 text-sm mb-2 p-2 bg-red-50 rounded">{error}</div>}
-        
-        <button onClick={signUp} className="w-full bg-indigo-600 text-white py-2 rounded mb-2 font-bold">Sign Up</button>
-        <button onClick={()=>{setView('login'); setError(''); setPasswordConfirm(''); setUsername(''); setAge(''); setParentalEmail('');}} className="w-full bg-gray-200 py-2 rounded">Already have account? Log In</button>
+        <button onClick={signUp} className="w-full bg-indigo-600 text-white py-2 rounded mb-2 font-bold hover:bg-indigo-700">
+          Create Account
+        </button>
+        <button
+          onClick={()=>{setView('login'); setError(''); setPasswordConfirm(''); setUsername(''); setAge(''); setParentalEmail('');}}
+          className="w-full text-center text-sm text-indigo-600 hover:underline py-1"
+        >
+          Already have an account? Log In
+        </button>
       </div>
     </div>
   );
 
   if (view === 'login') return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="bg-white p-8 rounded-xl w-96">
-        <h2 className="text-2xl font-bold mb-6">Log In 🌿</h2>
-        
-        <input placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full mb-3 p-2 border rounded"/>
-        
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-50">
+      <div className="bg-white p-8 rounded-xl w-96 shadow-lg">
+        <h2 className="text-2xl font-bold mb-1">Welcome Back 🌿</h2>
+        <p className="text-gray-500 text-sm mb-6">Log in to Good Energy</p>
+        <input placeholder="Email" type="email" value={email} onChange={e=>setEmail(e.target.value)} className="w-full mb-3 p-2 border rounded"/>
         <div className="relative mb-4">
-          <input 
-            type={showPassword ? "text" : "password"} 
-            placeholder="Password" 
-            value={password} 
-            onChange={e=>setPassword(e.target.value)} 
-            className="w-full p-2 border rounded"
+          <input
+            type={showPassword ? "text" : "password"}
+            placeholder="Password"
+            value={password}
+            onChange={e=>setPassword(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && login()}
+            className="w-full p-2 border rounded pr-16"
           />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-2 top-2 text-gray-500 hover:text-gray-700"
-          >
-            {showPassword ? '🙈 Hide' : '👁️ Show'}
+          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-2 text-xs text-gray-500">
+            {showPassword ? 'Hide' : 'Show'}
           </button>
         </div>
-        
         {error && <div className="text-red-600 text-sm mb-3 p-2 bg-red-50 rounded">{error}</div>}
-        
-        <button onClick={login} className="w-full bg-indigo-600 text-white py-2 rounded mb-2 font-bold">Log In</button>
-        <button onClick={()=>{setView('signup'); setError(''); setPassword(''); setEmail('');}} className="w-full bg-gray-200 py-2 rounded">Need an account? Sign Up</button>
+        <button onClick={login} className="w-full bg-indigo-600 text-white py-2 rounded mb-3 font-bold hover:bg-indigo-700">
+          Log In
+        </button>
+        <button
+          onClick={()=>{setView('signup'); setError(''); setPassword(''); setEmail('');}}
+          className="w-full text-center text-sm text-indigo-600 hover:underline py-1"
+        >
+          Need an account? Sign Up
+        </button>
       </div>
     </div>
   );
 
   if (showAvatarSetup && user && profile) return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-50 p-4">
-      <div className="bg-white p-8 rounded-xl w-96 text-center">
-        <h2 className="text-2xl font-bold mb-4">Set Your Profile 🎨</h2>
-        <p className="text-gray-600 mb-6">Upload a photo or choose an emoji as your avatar</p>
-        
-        <div className="mb-6">
+      <div className="bg-white p-8 rounded-xl w-96 text-center shadow-lg">
+        <h2 className="text-2xl font-bold mb-1">Set Your Avatar 🎨</h2>
+        <p className="text-gray-500 text-sm mb-5">Upload a photo or pick an emoji</p>
+        <div className="flex justify-center mb-6">
           <Avatar config={profile?.avatar} size={96}/>
         </div>
-
-        <div className="space-y-3 mb-6">
-          <label className="block">
-            <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden"/>
-            <span className="bg-indigo-600 text-white px-4 py-2 rounded cursor-pointer block hover:bg-indigo-700">
-              📸 Upload Photo
-            </span>
-          </label>
-        </div>
-
-        <p className="text-sm text-gray-600 mb-4">Or choose emoji:</p>
-        <div className="grid grid-cols-6 gap-2 mb-6">
-          {['😊','😍','🤔','😂','🎉','😎','🌟','💪','❤️','🔥','✨','🎨','😇','🤝','💧','⭐','🌈','🦄','🤖','🌻'].map(emoji => (
+        <label className="block mb-4">
+          <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden"/>
+          <span className="bg-indigo-600 text-white px-4 py-2 rounded cursor-pointer block hover:bg-indigo-700">
+            📸 Upload Photo
+          </span>
+        </label>
+        <p className="text-sm text-gray-500 mb-3">Or choose an emoji:</p>
+        <div className="grid grid-cols-7 gap-2 mb-6">
+          {['😊','😍','🤔','😂','🎉','😎','🌟','💪','❤️','🔥','✨','🎨','😇','🤝','💧','⭐','🌈','🦄','🤖','🌻','🎯','🏆'].map(emoji => (
             <button
               key={emoji}
               onClick={async () => {
@@ -857,18 +739,14 @@ export default function App() {
                 setShowAvatarSetup(false);
                 setView('feed');
               }}
-              className="text-3xl hover:scale-125 transition cursor-pointer"
+              className="text-2xl hover:scale-125 transition-transform cursor-pointer"
             >
               {emoji}
             </button>
           ))}
         </div>
-
-        <button
-          onClick={() => setShowAvatarSetup(false)}
-          className="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700"
-        >
-          Done
+        <button onClick={() => { setShowAvatarSetup(false); setView('feed'); }} className="w-full bg-gray-200 py-2 rounded hover:bg-gray-300">
+          Skip for Now
         </button>
       </div>
     </div>
@@ -876,9 +754,9 @@ export default function App() {
 
   if (view === 'onboarding') return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-50">
-      <div className="bg-white p-8 rounded-xl w-96 text-center">
-        <h2 className="text-2xl font-bold mb-4">Welcome to Good Energy! 🌿</h2>
-        <p className="text-gray-600 mb-6">Choose your experience:</p>
+      <div className="bg-white p-8 rounded-xl w-96 text-center shadow-lg">
+        <h2 className="text-2xl font-bold mb-2">Welcome to Good Energy! 🌿</h2>
+        <p className="text-gray-500 mb-6">Choose your experience:</p>
         <button
           onClick={async () => {
             try {
@@ -886,19 +764,16 @@ export default function App() {
               setIsPremium(false);
               setShowAvatarSetup(true);
             } catch (err) {
-              console.error('Error updating profile:', err);
               setError('Failed to continue. Please try again.');
             }
           }}
-          className="w-full bg-gray-200 text-gray-800 py-2 rounded mb-2"
+          className="w-full bg-gray-100 text-gray-800 py-3 rounded mb-2 hover:bg-gray-200 font-medium"
         >
           Continue Free
         </button>
         <button
-          onClick={async () => {
-            setView('premium');
-          }}
-          className="w-full bg-yellow-500 text-white py-2 rounded"
+          onClick={() => setView('premium')}
+          className="w-full bg-yellow-500 text-white py-3 rounded font-bold hover:bg-yellow-600"
         >
           ✨ Upgrade to Premium
         </button>
@@ -908,9 +783,9 @@ export default function App() {
 
   if (view === 'premium') return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-yellow-50 to-amber-50">
-      <div className="bg-white p-8 rounded-xl w-96 text-center">
-        <h2 className="text-2xl font-bold mb-2">✨ Good Energy Premium</h2>
-        <p className="text-gray-600 mb-4 text-sm">Unlock exclusive features</p>
+      <div className="bg-white p-8 rounded-xl w-96 text-center shadow-lg">
+        <h2 className="text-2xl font-bold mb-1">✨ Good Energy Premium</h2>
+        <p className="text-gray-500 mb-4 text-sm">Unlock exclusive features</p>
         <ul className="text-left mb-6 space-y-2 text-sm">
           <li>✅ Word Finder Game</li>
           <li>✅ Priority Moderation</li>
@@ -925,11 +800,10 @@ export default function App() {
               setIsPremium(true);
               setShowAvatarSetup(true);
             } catch (err) {
-              console.error('Error updating profile:', err);
               setError('Failed to subscribe. Please try again.');
             }
           }}
-          className="w-full bg-yellow-500 text-white py-2 rounded mb-2 font-bold"
+          className="w-full bg-yellow-500 text-white py-2 rounded mb-2 font-bold hover:bg-yellow-600"
         >
           Subscribe
         </button>
@@ -940,11 +814,10 @@ export default function App() {
               setIsPremium(false);
               setShowAvatarSetup(true);
             } catch (err) {
-              console.error('Error updating profile:', err);
               setError('Failed to continue. Please try again.');
             }
           }}
-          className="w-full bg-gray-200 py-2 rounded"
+          className="w-full bg-gray-200 py-2 rounded hover:bg-gray-300"
         >
           Skip for Now
         </button>
@@ -954,22 +827,15 @@ export default function App() {
 
   if (view === 'parental-pending') return (
     <div className="min-h-screen flex items-center justify-center bg-blue-50">
-      <div className="bg-white p-8 rounded-xl w-96 text-center border-2 border-blue-500">
+      <div className="bg-white p-8 rounded-xl w-96 text-center border-2 border-blue-500 shadow-lg">
         <h2 className="text-2xl font-bold mb-4">⏳ Parental Consent Pending</h2>
         <p className="text-gray-700 mb-2">Welcome to Good Energy! 🌿</p>
-        <p className="text-gray-600 mb-6">
-          Since you're under 18, your account is waiting for parental verification. We sent an email to your parent/guardian at:
-        </p>
+        <p className="text-gray-600 mb-4">Since you're under 18, we sent an email to your parent/guardian at:</p>
         <div className="bg-blue-50 p-3 rounded mb-6 border border-blue-300">
           <p className="font-mono text-sm">{profile?.parentalEmail}</p>
         </div>
-        <p className="text-sm text-gray-600 mb-6">
-          Once they verify, you'll be able to access Good Energy. This usually takes a few minutes.
-        </p>
-        <button
-          onClick={logout}
-          className="w-full bg-gray-400 text-white px-4 py-2 rounded font-bold hover:bg-gray-500"
-        >
+        <p className="text-sm text-gray-600 mb-6">Once they verify, you'll be able to access Good Energy.</p>
+        <button onClick={logout} className="w-full bg-gray-400 text-white px-4 py-2 rounded font-bold hover:bg-gray-500">
           Sign Out
         </button>
       </div>
@@ -978,29 +844,19 @@ export default function App() {
 
   if (view === 'verify-parent') return (
     <div className="min-h-screen flex items-center justify-center bg-green-50">
-      <div className="bg-white p-8 rounded-xl w-96 text-center border-2 border-green-500">
+      <div className="bg-white p-8 rounded-xl w-96 text-center border-2 border-green-500 shadow-lg">
         {verifyTokenError ? (
           <>
             <h2 className="text-2xl font-bold text-red-600 mb-4">❌ Verification Failed</h2>
             <p className="text-gray-700 mb-6">{verifyTokenError}</p>
-            <button
-              onClick={() => setView('splash')}
-              className="w-full bg-indigo-600 text-white px-4 py-2 rounded font-bold"
-            >
-              Go Back
-            </button>
+            <button onClick={() => setView('splash')} className="w-full bg-indigo-600 text-white px-4 py-2 rounded font-bold">Go Back</button>
           </>
         ) : (
           <>
             <h2 className="text-2xl font-bold text-green-600 mb-4">✅ Account Verified!</h2>
             <p className="text-gray-700 mb-4">Your parent has verified your account.</p>
-            <p className="text-gray-600 mb-6">Your teen can now access Good Energy and set up their avatar.</p>
-            <button
-              onClick={() => setView('splash')}
-              className="w-full bg-indigo-600 text-white px-4 py-2 rounded font-bold"
-            >
-              Continue to App
-            </button>
+            <p className="text-gray-600 mb-6">Your teen can now access Good Energy!</p>
+            <button onClick={() => setView('splash')} className="w-full bg-indigo-600 text-white px-4 py-2 rounded font-bold">Continue to App</button>
           </>
         )}
       </div>
@@ -1013,16 +869,11 @@ export default function App() {
         <h2 className="text-xl mb-4">Reset Space</h2>
         <div className="grid grid-cols-3 gap-2 mb-4">
           {board.map((c,i)=>(
-            <button key={i} onClick={()=>play(i)} className="w-16 h-16 bg-gray-200 text-2xl">
-              {c}
-            </button>
+            <button key={i} onClick={()=>play(i)} className="w-16 h-16 bg-gray-200 text-2xl">{c}</button>
           ))}
         </div>
         <button
-          onClick={()=>{
-            updateDoc(doc(db,'profiles',user.uid),{ violations:0,aura:'blue' });
-            setView('feed');
-          }}
+          onClick={()=>{ updateDoc(doc(db,'profiles',user.uid),{ violations:0,aura:'blue' }); setView('feed'); }}
           className="bg-indigo-600 text-white px-4 py-2 rounded"
         >
           Return
@@ -1033,20 +884,11 @@ export default function App() {
 
   if (profile?.aura === 'banned') return (
     <div className="min-h-screen flex items-center justify-center bg-red-50">
-      <div className="bg-white p-8 rounded-xl w-96 text-center border-4 border-red-500">
+      <div className="bg-white p-8 rounded-xl w-96 text-center border-4 border-red-500 shadow-lg">
         <h2 className="text-2xl font-bold text-red-600 mb-4">⛔ Account Suspended</h2>
-        <p className="text-gray-700 mb-4">
-          Your account has been permanently suspended for violating our safety policies, particularly regarding teen protection.
-        </p>
-        <p className="text-gray-600 text-sm mb-6">
-          Good Energy is committed to protecting minors. Predatory behavior will not be tolerated.
-        </p>
-        <button
-          onClick={logout}
-          className="bg-gray-400 text-white px-6 py-2 rounded"
-        >
-          Sign Out
-        </button>
+        <p className="text-gray-700 mb-4">Your account has been permanently suspended for violating our safety policies.</p>
+        <p className="text-gray-600 text-sm mb-6">Good Energy is committed to protecting minors. Predatory behavior will not be tolerated.</p>
+        <button onClick={logout} className="bg-gray-400 text-white px-6 py-2 rounded">Sign Out</button>
       </div>
     </div>
   );
@@ -1054,17 +896,15 @@ export default function App() {
   if (view === 'wordFinder') return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
       <div className="max-w-2xl mx-auto">
-        <button onClick={() => setView('feed')} className="mb-4 bg-gray-300 px-4 py-2 rounded">← Back to Feed</button>
+        <button onClick={() => setView('feed')} className="mb-4 bg-gray-300 px-4 py-2 rounded">← Back</button>
         <div className="bg-white p-6 rounded-xl text-center">
           <h2 className="text-3xl font-bold mb-4">✨ Word Finder</h2>
-          <p className="text-gray-600 mb-4">Find hidden words in the grid (Premium Feature)</p>
           <div className="grid grid-cols-4 gap-2 mb-6 bg-indigo-100 p-4 rounded">
             {['L','O','V','E','C','A','L','M','J','O','Y','S','K','I','N','D'].map((letter, i) => (
               <div key={i} className="bg-white p-3 rounded font-bold text-lg cursor-pointer hover:bg-indigo-200">{letter}</div>
             ))}
           </div>
           <div className="text-4xl font-bold text-yellow-600 mb-4">Score: {wordScore}</div>
-          <p className="text-gray-600 mb-4">Words found: LOVE, CALM, JOY, KIND, CARE</p>
           <button onClick={() => setWordScore(wordScore + 100)} className="w-full bg-indigo-600 text-white py-3 rounded mb-2">+ Find Word</button>
         </div>
       </div>
@@ -1073,132 +913,134 @@ export default function App() {
 
   if (selectedProfileUser) return (
     <div className="min-h-screen bg-gray-100 p-4">
-      <button onClick={() => setSelectedProfileUser(null)} className="mb-4 bg-gray-300 px-4 py-2 rounded">← Back</button>
-      <div className="max-w-md mx-auto bg-white p-6 rounded-xl">
-        <div className="text-center mb-6">
+      <button onClick={() => setSelectedProfileUser(null)} className="mb-4 bg-gray-300 px-4 py-2 rounded hover:bg-gray-400">
+        ← Back to Feed
+      </button>
+      <div className="max-w-md mx-auto bg-white p-8 rounded-xl shadow-lg text-center">
+        <div className="flex justify-center mb-4">
           <Avatar config={selectedProfileUser.avatar} size={96}/>
-          <h2 className="text-2xl font-bold mt-4">{selectedProfileUser.username}</h2>
-          <p className="text-gray-600">Age {selectedProfileUser.age}</p>
         </div>
-        <button
-          onClick={() => {setChatWith(selectedProfileUser.uid); setView('chat');}}
-          className="w-full bg-blue-600 text-white py-2 rounded mb-2 font-bold"
-        >
-          💬 Send Message
-        </button>
+        <h2 className="text-2xl font-bold mb-1">{selectedProfileUser.username}</h2>
+        {selectedProfileUser.age && <p className="text-gray-500 mb-6">Age {selectedProfileUser.age}</p>}
+        {selectedProfileUser.uid !== user?.uid && (
+          <button
+            onClick={() => openChat(selectedProfileUser, selectedProfileUser.uid)}
+            className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 text-lg"
+          >
+            💬 Send Message
+          </button>
+        )}
       </div>
     </div>
   );
 
-  if (view === 'chat' && chatWith) return (
-    <div className="min-h-screen bg-gray-100 flex flex-col p-4">
-      <button onClick={() => {setChatWith(null); setView('feed');}} className="mb-2 bg-gray-300 px-4 py-2 rounded w-fit">← Back</button>
-      <div className="max-w-2xl mx-auto w-full bg-white rounded-xl flex flex-col flex-1">
-        <div className="p-4 border-b font-bold">Chat</div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {messages[([user.uid, chatWith].sort().join('_'))] && messages[([user.uid, chatWith].sort().join('_'))].map((msg, i) => (
-            <div key={i} className={`p-2 rounded ${msg.senderId === user.uid ? 'bg-blue-100 ml-auto max-w-xs' : 'bg-gray-100'}`}>
-              {msg.text}
-            </div>
-          ))}
+  if (view === 'chat' && chatWith) {
+    const conversationId = [user.uid, chatWith].sort().join('_');
+    const currentMessages = messages[conversationId] || [];
+    return (
+      <div className="min-h-screen bg-gray-100 flex flex-col">
+        <div className="bg-white border-b px-4 py-3 flex items-center gap-3 shadow-sm">
+          <button onClick={() => { setChatWith(null); setChatWithProfile(null); setView('feed'); }} className="text-indigo-600 font-bold mr-2">←</button>
+          {chatWithProfile && (
+            <>
+              <Avatar config={chatWithProfile.avatar} size={36}/>
+              <span className="font-bold text-lg">{chatWithProfile.username}</span>
+            </>
+          )}
         </div>
-        <div className="p-4 border-t flex gap-2">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{maxHeight:'calc(100vh - 140px)'}}>
+          {currentMessages.length === 0 && (
+            <div className="text-center text-gray-400 mt-10">
+              <p className="text-4xl mb-2">💬</p>
+              <p>No messages yet. Say hi!</p>
+            </div>
+          )}
+          {currentMessages.map((msg, i) => {
+            const isMe = msg.senderId === user.uid;
+            return (
+              <div key={i} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-xs px-4 py-2 rounded-2xl ${isMe ? 'bg-indigo-600 text-white' : 'bg-white text-gray-800 shadow'}`}>
+                  <p>{msg.text}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="bg-white border-t p-3 flex gap-2">
           <input
             value={newMessage}
             onChange={e => setNewMessage(e.target.value)}
-            onKeyPress={e => e.key === 'Enter' && sendMessage()}
+            onKeyDown={e => e.key === 'Enter' && sendMessage()}
             placeholder="Type a message..."
-            className="flex-1 p-2 border rounded"
+            className="flex-1 p-2 border rounded-xl focus:outline-none focus:border-indigo-400"
           />
-          <button onClick={sendMessage} className="bg-blue-600 text-white px-4 py-2 rounded"><Send/></button>
+          <button onClick={sendMessage} className="bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700">
+            <Send size={18}/>
+          </button>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
 
+  /* ── FEED ── */
   return (
     <div className="min-h-screen bg-gray-100 p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-xl font-bold">Good Energy {isTeenPool && '👶'}</h1>
-        <div className="text-xs text-gray-500">{isTeenPool ? '🔒 Teen Pool' : isPremium ? '✨ Premium' : ''}</div>
-        <div className="flex gap-4 items-center">
+      <div className="flex justify-between items-center mb-4 bg-white rounded-xl px-4 py-3 shadow-sm">
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold">Good Energy 🌿</h1>
+          <span className="text-xs text-gray-400">{isTeenPool ? '🔒 Teen Pool' : isPremium ? '✨ Premium' : ''}</span>
+        </div>
+        <div className="flex gap-3 items-center">
           {isPremium && (
-            <button onClick={() => setView('wordFinder')} className="text-sm bg-yellow-500 text-white px-2 py-1 rounded">
+            <button onClick={() => setView('wordFinder')} className="text-sm bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600">
               🎮 Word Finder
             </button>
           )}
-           <button onClick={()=>setShowProfileEdit(true)}><User size={20}/></button>
-           <button onClick={()=>setShowSettings(true)}><Settings size={20}/></button>
-           <button onClick={()=>setSupportVisible(true)} className="text-xs bg-blue-600 text-white px-2 py-1 rounded">💬 Support</button>
-           <a href="/legal.html" target="_blank" className="text-xs text-gray-500 hover:text-gray-700">Legal</a>
-           <button onClick={logout}><LogOut/></button>
+          <button onClick={()=>setShowProfileEdit(true)} title="Edit Profile" className="hover:opacity-80 transition-opacity">
+            <Avatar config={profile?.avatar} size={36}/>
+          </button>
+          <button onClick={()=>setShowSettings(true)} title="Settings" className="text-gray-600 hover:text-gray-900"><Settings size={20}/></button>
+          <button onClick={()=>setSupportVisible(true)} className="text-xs bg-indigo-600 text-white px-2 py-1 rounded hover:bg-indigo-700">💬 Support</button>
+          <a href="/legal.html" target="_blank" className="text-xs text-gray-400 hover:text-gray-600">Legal</a>
+          <button onClick={logout} title="Log Out" className="text-gray-600 hover:text-red-500"><LogOut size={20}/></button>
         </div>
       </div>
 
       {showProfileEdit && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center mb-4">
-          <div className="bg-white p-6 rounded-xl w-80 text-center">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-xl w-80 text-center shadow-xl">
             <h3 className="text-lg font-bold mb-4">Edit Avatar</h3>
-            <Avatar config={profile?.avatar} size={64}/>
-            <div className="my-4 space-y-2">
-              <label className="block">
-                <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden"/>
-                <span className="bg-indigo-600 text-white px-4 py-2 rounded cursor-pointer block">Upload Photo</span>
-              </label>
-            </div>
-            <p className="text-sm text-gray-600 mb-3">Or choose emoji:</p>
+            <div className="flex justify-center mb-4"><Avatar config={profile?.avatar} size={80}/></div>
+            <label className="block mb-4">
+              <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden"/>
+              <span className="bg-indigo-600 text-white px-4 py-2 rounded cursor-pointer block hover:bg-indigo-700">📸 Upload Photo</span>
+            </label>
+            <p className="text-sm text-gray-500 mb-3">Or choose emoji:</p>
             <div className="grid grid-cols-6 gap-2 mb-4">
               {['😊','😍','🤔','😂','🎉','😎','🌟','💪','❤️','🔥','✨','🎨'].map(emoji => (
-                <button
-                  key={emoji}
-                  onClick={() => updateAvatar(emoji)}
-                  className="text-2xl hover:scale-125"
-                >
-                  {emoji}
-                </button>
+                <button key={emoji} onClick={() => updateAvatar(emoji)} className="text-2xl hover:scale-125 transition-transform">{emoji}</button>
               ))}
             </div>
-            <button
-              onClick={() => setShowProfileEdit(false)}
-              className="bg-gray-300 px-4 py-2 rounded w-full"
-            >
-              Close
-            </button>
+            <button onClick={() => setShowProfileEdit(false)} className="bg-gray-200 px-4 py-2 rounded w-full hover:bg-gray-300">Close</button>
           </div>
         </div>
       )}
 
       {showSettings && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl w-96 max-h-96 overflow-y-auto">
+          <div className="bg-white p-6 rounded-xl w-80 shadow-xl">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">Account Settings ⚙️</h3>
               <button onClick={() => setShowSettings(false)}><X size={20}/></button>
             </div>
-
             <div className="space-y-3">
-              <button
-                onClick={exportData}
-                className="w-full flex items-center gap-2 bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 rounded hover:bg-blue-100"
-              >
-                <Download size={18}/>
-                Export My Data
+              <button onClick={exportData} className="w-full flex items-center gap-2 bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 rounded hover:bg-blue-100">
+                <Download size={18}/> Export My Data
               </button>
-
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="w-full flex items-center gap-2 bg-red-50 border border-red-300 text-red-700 px-4 py-2 rounded hover:bg-red-100"
-              >
-                <Trash2 size={18}/>
-                Delete Account
+              <button onClick={() => setShowDeleteConfirm(true)} className="w-full flex items-center gap-2 bg-red-50 border border-red-300 text-red-700 px-4 py-2 rounded hover:bg-red-100">
+                <Trash2 size={18}/> Delete Account
               </button>
-
-              <button
-                onClick={() => setShowSettings(false)}
-                className="w-full bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400"
-              >
-                Close
-              </button>
+              <button onClick={() => setShowSettings(false)} className="w-full bg-gray-200 py-2 rounded hover:bg-gray-300">Close</button>
             </div>
           </div>
         </div>
@@ -1206,36 +1048,14 @@ export default function App() {
 
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl w-96 border-2 border-red-500">
+          <div className="bg-white p-6 rounded-xl w-96 border-2 border-red-500 shadow-xl">
             <h3 className="text-lg font-bold text-red-600 mb-4">⚠️ Delete Account</h3>
-            <p className="text-gray-700 mb-4">
-              This action is permanent. All your data will be deleted after 30 days. Enter your password to confirm:
-            </p>
-            <input
-              type="password"
-              placeholder="Confirm password"
-              value={deletePassword}
-              onChange={e => setDeletePassword(e.target.value)}
-              className="w-full p-2 border rounded mb-4"
-            />
+            <p className="text-gray-700 mb-4">All your data will be deleted after 30 days. Enter your password to confirm:</p>
+            <input type="password" placeholder="Confirm password" value={deletePassword} onChange={e => setDeletePassword(e.target.value)} className="w-full p-2 border rounded mb-4"/>
             {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
             <div className="flex gap-2">
-              <button
-                onClick={deleteAccount}
-                className="flex-1 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 font-bold"
-              >
-                Delete
-              </button>
-              <button
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  setDeletePassword('');
-                  setError('');
-                }}
-                className="flex-1 bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400"
-              >
-                Cancel
-              </button>
+              <button onClick={deleteAccount} className="flex-1 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 font-bold">Delete</button>
+              <button onClick={() => { setShowDeleteConfirm(false); setDeletePassword(''); setError(''); }} className="flex-1 bg-gray-300 py-2 rounded hover:bg-gray-400">Cancel</button>
             </div>
           </div>
         </div>
@@ -1243,20 +1063,15 @@ export default function App() {
 
       {supportVisible && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl w-96 max-h-96 overflow-y-auto">
+          <div className="bg-white p-6 rounded-xl w-96 shadow-xl">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">💬 Support & Appeals</h3>
               <button onClick={() => setSupportVisible(false)}><X size={20}/></button>
             </div>
-
             <div className="space-y-3">
               <div>
                 <label className="text-sm font-bold">Category</label>
-                <select
-                  value={supportForm.category}
-                  onChange={e => setSupportForm({...supportForm, category: e.target.value})}
-                  className="w-full p-2 border rounded"
-                >
+                <select value={supportForm.category} onChange={e => setSupportForm({...supportForm, category: e.target.value})} className="w-full p-2 border rounded">
                   <option value="report">Report Content</option>
                   <option value="appeal">Appeal Violation</option>
                   <option value="privacy">Privacy Concern</option>
@@ -1264,159 +1079,115 @@ export default function App() {
                   <option value="other">Other</option>
                 </select>
               </div>
-
               <div>
                 <label className="text-sm font-bold">Subject</label>
-                <input
-                  type="text"
-                  value={supportForm.subject}
-                  onChange={e => setSupportForm({...supportForm, subject: e.target.value})}
-                  placeholder="Brief subject"
-                  className="w-full p-2 border rounded"
-                />
+                <input type="text" value={supportForm.subject} onChange={e => setSupportForm({...supportForm, subject: e.target.value})} placeholder="Brief subject" className="w-full p-2 border rounded"/>
               </div>
-
               <div>
                 <label className="text-sm font-bold">Message</label>
-                <textarea
-                  value={supportForm.message}
-                  onChange={e => setSupportForm({...supportForm, message: e.target.value})}
-                  placeholder="Tell us what happened..."
-                  className="w-full p-2 border rounded h-24"
-                />
+                <textarea value={supportForm.message} onChange={e => setSupportForm({...supportForm, message: e.target.value})} placeholder="Tell us what happened..." className="w-full p-2 border rounded h-24"/>
               </div>
-
               {error && <div className="text-red-600 text-sm">{error}</div>}
-
               <div className="flex gap-2">
-                <button
-                  onClick={submitSupportTicket}
-                  disabled={supportSubmitting}
-                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
-                >
+                <button onClick={submitSupportTicket} disabled={supportSubmitting} className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 disabled:bg-gray-400">
                   {supportSubmitting ? 'Sending...' : 'Submit'}
                 </button>
-                <button
-                  onClick={() => setSupportVisible(false)}
-                  className="flex-1 bg-gray-300 text-gray-800 px-4 py-2 rounded"
-                >
-                  Close
-                </button>
+                <button onClick={() => setSupportVisible(false)} className="flex-1 bg-gray-300 py-2 rounded hover:bg-gray-400">Close</button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      <textarea
-        value={newPost}
-        onChange={e=>setNewPost(e.target.value)}
-        className="w-full p-3 rounded mb-2"
-        placeholder="Share something positive..."
-      />
-
-      <label className="block mb-2">
-        <input 
-          type="file" 
-          accept="image/*,video/*" 
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (ev) => setNewPostMedia(ev.target?.result);
-            reader.readAsDataURL(file);
-          }}
-          className="hidden"
-        />
-        <span className="bg-gray-200 px-4 py-2 rounded cursor-pointer inline-block text-sm">
-          + Add Image/Video
-        </span>
-      </label>
-
-      {newPostMedia && (
-        <div className="mb-2 relative">
-          {newPostMedia.startsWith('data:video') ? (
-            <video src={newPostMedia} controls className="w-full rounded max-h-64 object-contain"/>
-          ) : (
-            <img src={newPostMedia} alt="preview" className="w-full rounded max-h-64 object-contain"/>
-          )}
-          <button
-            onClick={() => setNewPostMedia(null)}
-            className="absolute top-2 right-2 bg-red-500 text-white px-2 py-1 rounded text-sm"
-          >
-            Remove
-          </button>
+      <div className="bg-white rounded-xl p-4 mb-4 shadow-sm">
+        <div className="flex gap-3 mb-3">
+          <Avatar config={profile?.avatar} size={40}/>
+          <textarea
+            value={newPost}
+            onChange={e=>setNewPost(e.target.value)}
+            className="flex-1 p-3 border rounded-xl resize-none"
+            placeholder="Share something positive..."
+            rows={2}
+          />
         </div>
-      )}
-
-      {error && <div className="text-red-600 flex gap-1"><AlertCircle size={16}/>{error}</div>}
-
-      <button onClick={createPost} className="w-full bg-indigo-600 text-white py-2 rounded mb-6">
-        Post
-      </button>
+        <label className="block mb-2">
+          <input
+            type="file" accept="image/*,video/*"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = (ev) => setNewPostMedia(ev.target?.result);
+              reader.readAsDataURL(file);
+            }}
+            className="hidden"
+          />
+          <span className="bg-gray-100 px-3 py-1 rounded-lg cursor-pointer inline-block text-sm hover:bg-gray-200 text-gray-600">
+            📎 Add Image/Video
+          </span>
+        </label>
+        {newPostMedia && (
+          <div className="mb-2 relative">
+            {newPostMedia.startsWith('data:video') ? (
+              <video src={newPostMedia} controls className="w-full rounded-xl max-h-64 object-contain bg-black"/>
+            ) : (
+              <img src={newPostMedia} alt="preview" className="w-full rounded-xl max-h-64 object-contain bg-gray-100"/>
+            )}
+            <button onClick={() => setNewPostMedia(null)} className="absolute top-2 right-2 bg-red-500 text-white px-2 py-1 rounded-lg text-sm">✕ Remove</button>
+          </div>
+        )}
+        {error && <div className="text-red-600 text-sm flex gap-1 mb-2"><AlertCircle size={16}/>{error}</div>}
+        <button onClick={createPost} className="w-full bg-indigo-600 text-white py-2 rounded-xl font-bold hover:bg-indigo-700">Post</button>
+      </div>
 
       {posts.map(p=>(
-        <div key={p.id} className="bg-white p-4 rounded mb-4">
-          <div className="flex gap-2 items-center mb-2">
-            <button onClick={() => setSelectedProfileUser({...p.profiles, uid: p.authorId})} className="hover:opacity-70">
-              <Avatar config={p.profiles?.avatar}/>
+        <div key={p.id} className="bg-white p-4 rounded-xl mb-3 shadow-sm">
+          <div className="flex gap-3 items-center mb-3">
+            <button onClick={() => setSelectedProfileUser({...p.profiles, uid: p.authorId})} className="hover:opacity-75 transition-opacity flex-shrink-0">
+              <Avatar config={p.profiles?.avatar || {}} size={40}/>
             </button>
-            <b>{p.profiles?.username}</b>
+            <button onClick={() => setSelectedProfileUser({...p.profiles, uid: p.authorId})} className="font-bold hover:text-indigo-600">
+              {p.profiles?.username || 'Unknown'}
+            </button>
           </div>
-
-          <p>{p.content}</p>
-
+          <p className="mb-3 text-gray-800">{p.content}</p>
           {p.mediaUrl && (
             p.mediaUrl.startsWith('data:video') ? (
-              <video src={p.mediaUrl} controls className="w-full rounded my-2 max-h-64 object-contain"/>
+              <video src={p.mediaUrl} controls className="w-full rounded-xl my-2 max-h-96 bg-black"/>
             ) : (
-              <img src={p.mediaUrl} alt="post media" className="w-full rounded my-2 max-h-64 object-contain"/>
+              <img src={p.mediaUrl} alt="post media" className="w-full rounded-xl my-2 max-h-96 object-contain bg-gray-50"/>
             )
           )}
-
-          <div className="flex gap-4 mt-2">
-            <button onClick={()=>react(p)} className="flex gap-1">
-              <Heart className={p.reactions.includes(user.uid) ? 'fill-red-500 text-red-500':''}/>
-              {p.reactions.length}
+          <div className="flex gap-4 mt-2 mb-2">
+            <button onClick={()=>react(p)} className="flex items-center gap-1 text-gray-500 hover:text-red-500">
+              <Heart size={18} className={p.reactions.includes(user.uid) ? 'fill-red-500 text-red-500':''}/>
+              <span className="text-sm">{p.reactions.length}</span>
             </button>
-            <button onClick={()=>setShowReactionPicker(showReactionPicker === p.id ? null : p.id)} className="text-xl">
-              😊
-            </button>
+            <button onClick={()=>setShowReactionPicker(showReactionPicker === p.id ? null : p.id)} className="text-xl hover:scale-110">😊</button>
           </div>
-
           {showReactionPicker === p.id && (
-            <div className="bg-gray-50 p-3 rounded mt-2 flex gap-2 flex-wrap">
+            <div className="bg-gray-50 p-3 rounded-xl mb-2 flex gap-2 flex-wrap">
               {['👍','❤️','😂','🔥','😍','🎉','✨','💪','🌟','🙏','😢','👏','😮','🤔','😭','🎈','🌻','🤝','💧','⭐'].map(emoji => (
-                <button
-                  key={emoji}
-                  onClick={() => reactWithEmoji(p, emoji)}
-                  className="text-2xl hover:scale-125 cursor-pointer"
-                >
-                  {emoji}
-                </button>
+                <button key={emoji} onClick={() => reactWithEmoji(p, emoji)} className="text-2xl hover:scale-125 cursor-pointer">{emoji}</button>
               ))}
             </div>
           )}
-
           {Object.values(p.emojiReactions || {}).length > 0 && (
-            <div className="flex gap-1 mt-2 flex-wrap">
+            <div className="flex gap-1 mb-2 flex-wrap">
               {Array.from(new Set(Object.values(p.emojiReactions))).map(emoji => (
-                <span key={emoji} className="bg-gray-100 px-2 py-1 rounded text-sm">
-                  {emoji}
-                </span>
+                <span key={emoji} className="bg-gray-100 px-2 py-1 rounded-lg text-sm">{emoji}</span>
               ))}
             </div>
           )}
-
           <div className="flex gap-2 mt-2">
             <input
               value={commentInputs[p.id]||''}
               onChange={e=>setCommentInputs(v=>({...v,[p.id]:e.target.value}))}
-              className="flex-1 p-2 border rounded"
+              onKeyDown={e => e.key === 'Enter' && comment(p.id, commentInputs[p.id])}
+              className="flex-1 p-2 border rounded-xl text-sm focus:outline-none focus:border-indigo-400"
+              placeholder="Add a comment..."
             />
-            <button onClick={()=>comment(p.id,commentInputs[p.id])}>
-              <Send/>
-            </button>
+            <button onClick={()=>comment(p.id,commentInputs[p.id])} className="text-indigo-600 hover:text-indigo-800"><Send size={18}/></button>
           </div>
         </div>
       ))}
