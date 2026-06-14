@@ -1,0 +1,1261 @@
+import React, { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
+import { Heart, MessageCircle, Users, Search, Send, X, User, LogOut, Shield, Home, Mail, Settings, FileText, ChevronRight, AlertCircle } from 'lucide-react';
+
+const supabase = createClient(
+  'https://pvzixnoizskzywsmkcij.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2eml4bm9penNrenl3c21rY2lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU3MTY1NzMsImV4cCI6MjA4MTI5MjU3M30.P3xnjT9yqaSpAd8k2fi8Oo--Ds1gTOXJxF4OpcjgFdM'
+);
+
+// Moderation Engine
+const ModerationEngine = {
+  negativeKeywords: [
+    'stupid', 'idiot', 'dumb', 'trash', 'garbage', 'terrible', 'awful',
+    'sucks', 'hate', 'worst', 'useless', 'pathetic', 'loser', 'ugly'
+  ],
+  
+  targetedPhrases: [
+    'you are', 'you\'re', 'your', 'shut up', 'get lost', 'go away',
+    'nobody cares', 'who asked', 'why would anyone'
+  ],
+  
+  sarcasticPhrases: [
+    'oh wow', 'how original', 'totally what we needed', 'great job', 'well done'
+  ],
+  
+  positiveContextProfanity: [
+    'fucking proud', 'fuck yeah', 'holy shit', 'damn good', 'badass'
+  ],
+  
+  checkComment(text) {
+    const lower = text.toLowerCase().trim();
+    
+    if (!lower || lower.length < 1) {
+      return { allowed: false, reason: 'Comment cannot be empty' };
+    }
+    
+    if (lower === '...' || lower === '…') {
+      return { allowed: false, reason: 'This doesn\'t match the calm tone here. Try expressing your thought more fully.' };
+    }
+    
+    if (lower === 'k' || lower === 'ok' || lower === 'okay') {
+      return { allowed: true };
+    }
+    
+    // Check for positive context profanity first
+    for (let phrase of this.positiveContextProfanity) {
+      if (lower.includes(phrase)) {
+        return { allowed: true };
+      }
+    }
+    
+    // Check for targeted negativity
+    const hasNegative = this.negativeKeywords.some(word => lower.includes(word));
+    const hasTarget = this.targetedPhrases.some(phrase => lower.includes(phrase));
+    
+    if (hasNegative && hasTarget) {
+      return { allowed: false, reason: 'This doesn\'t match the calm tone here. Try rewording to uplift instead.' };
+    }
+    
+    // Check for sarcasm
+    for (let phrase of this.sarcasticPhrases) {
+      if (lower.includes(phrase)) {
+        return { allowed: false, reason: 'This seems dismissive. Let\'s keep the energy positive.' };
+      }
+    }
+    
+    // Check for direct negativity
+    if (this.negativeKeywords.some(word => lower.includes(word))) {
+      if (lower.includes('not') || lower.includes('isn\'t') || lower.includes('aren\'t')) {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: 'This doesn\'t match the calm tone here. Try expressing this more constructively.' };
+    }
+    
+    // Emotional vulnerability is allowed
+    if (lower.includes('sad') || lower.includes('down') || lower.includes('struggling') || lower.includes('hard day')) {
+      return { allowed: true };
+    }
+    
+    return { allowed: true };
+  }
+};
+
+export default function GoodEnergyApp() {
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [view, setView] = useState('splash');
+  const [authMode, setAuthMode] = useState('login');
+  
+  // Onboarding
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
+  const [avatarChoice, setAvatarChoice] = useState('avatar');
+  
+  // Auth
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  
+  // Posts
+  const [posts, setPosts] = useState([]);
+  const [newPost, setNewPost] = useState('');
+  const [commentInputs, setCommentInputs] = useState({});
+  const [moderationError, setModerationError] = useState('');
+  
+  // Social
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [friendRequests, setFriendRequests] = useState([]);
+  const [friends, setFriends] = useState([]);
+  
+  // Settings
+  const [showSettings, setShowSettings] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editedProfile, setEditedProfile] = useState({});
+  
+  // Reset Space
+  const [ticTacToeBoard, setTicTacToeBoard] = useState(Array(9).fill(null));
+  const [ticTacToePlayer, setTicTacToePlayer] = useState('X');
+  const [resetSpaceTimeRemaining, setResetSpaceTimeRemaining] = useState(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setUser(session.user);
+        loadProfile(session.user.id);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        setUser(session.user);
+        loadProfile(session.user.id);
+      } else {
+        setUser(null);
+        setProfile(null);
+        setView('splash');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const loadProfile = async (userId) => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    
+    if (data) {
+      setProfile(data);
+      setEditedProfile(data);
+      
+      if (data.aura === 'black') {
+        setView('reset');
+      } else if (view === 'splash') {
+        setView('onboarding');
+      }
+    }
+  };
+
+  const handleSignUp = async () => {
+    if (!username.trim()) {
+      alert('Username is required');
+      return;
+    }
+    
+    if (!hasAcceptedTerms) {
+      alert('You must accept the Terms of Service to continue');
+      return;
+    }
+    
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { username } }
+    });
+    
+    if (error) {
+      alert(error.message);
+    } else {
+      alert('Account created! Please check your email to verify.');
+    }
+  };
+
+  const handleLogin = async () => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) alert(error.message);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  const completeOnboarding = () => {
+    setView('feed');
+    loadFeed();
+  };
+
+  const loadFeed = async () => {
+    const { data } = await supabase
+      .from('posts')
+      .select(`
+        *,
+        profiles:author_id (username, avatar_config),
+        comments (*, profiles:author_id (username)),
+        reactions (emoji, user_id)
+      `)
+      .order('created_at', { ascending: false });
+    
+    if (data) setPosts(data);
+  };
+
+  const createPost = async () => {
+    if (!newPost.trim()) return;
+    
+    const check = ModerationEngine.checkComment(newPost);
+    if (!check.allowed) {
+      setModerationError(check.reason);
+      return;
+    }
+    
+    const { error } = await supabase
+      .from('posts')
+      .insert([{ author_id: user.id, content: newPost }]);
+    
+    if (!error) {
+      setNewPost('');
+      setModerationError('');
+      loadFeed();
+    }
+  };
+
+  const addComment = async (postId, content) => {
+    if (!content.trim()) return;
+    
+    const check = ModerationEngine.checkComment(content);
+    if (!check.allowed) {
+      setModerationError(check.reason);
+      await incrementViolation();
+      return;
+    }
+    
+    await supabase.from('comments').insert([{ post_id: postId, author_id: user.id, content }]);
+    setCommentInputs(prev => ({ ...prev, [postId]: '' }));
+    setModerationError('');
+    loadFeed();
+  };
+
+  const incrementViolation = async () => {
+    const newViolations = (profile.violations || 0) + 1;
+    let newAura = profile.aura;
+    
+    if (newViolations === 1) newAura = 'orange';
+    if (newViolations >= 3) newAura = 'black';
+    
+    await supabase.from('profiles').update({ 
+      violations: newViolations, 
+      aura: newAura 
+    }).eq('id', user.id);
+    
+    await supabase.from('violations').insert([{
+      user_id: user.id,
+      reason: 'Attempted negative comment'
+    }]);
+    
+    loadProfile(user.id);
+  };
+
+  const toggleReaction = async (postId) => {
+    const { data: existing } = await supabase
+      .from('reactions')
+      .select('*')
+      .eq('post_id', postId)
+      .eq('user_id', user.id)
+      .single();
+    
+    if (existing) {
+      await supabase.from('reactions').delete().eq('post_id', postId).eq('user_id', user.id);
+    } else {
+      await supabase.from('reactions').insert([{ post_id: postId, user_id: user.id, emoji: '❤️' }]);
+    }
+    loadFeed();
+  };
+
+  const searchUsers = async () => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .ilike('username', `%${searchQuery}%`)
+      .limit(10);
+    
+    if (data) setSearchResults(data.filter(p => p.id !== user.id));
+  };
+
+  const sendFriendRequest = async (receiverId) => {
+    const { error } = await supabase.from('friend_requests').insert([{ sender_id: user.id, receiver_id: receiverId }]);
+    if (!error) {
+      alert('Friend request sent!');
+      setSearchResults([]);
+    }
+  };
+
+  const loadFriendRequests = async () => {
+    const { data } = await supabase
+      .from('friend_requests')
+      .select(`*, sender:sender_id (username, avatar_config)`)
+      .eq('receiver_id', user.id)
+      .eq('status', 'pending');
+    
+    if (data) setFriendRequests(data);
+  };
+
+  const acceptFriendRequest = async (requestId, senderId) => {
+    await supabase.from('friend_requests').update({ status: 'accepted' }).eq('id', requestId);
+    await supabase.from('friends').insert([
+      { user_id: user.id, friend_id: senderId },
+      { user_id: senderId, friend_id: user.id }
+    ]);
+    loadFriendRequests();
+    loadFriends();
+  };
+
+  const loadFriends = async () => {
+    const { data } = await supabase
+      .from('friends')
+      .select(`*, profile:friend_id (username, avatar_config, is_private)`)
+      .eq('user_id', user.id);
+    
+    if (data) setFriends(data);
+  };
+
+  const unfriend = async (friendId) => {
+    await supabase.from('friends').delete()
+      .or(`and(user_id.eq.${user.id},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${user.id})`);
+    loadFriends();
+  };
+
+  const blockUser = async (blockedId) => {
+    await supabase.from('friends').delete()
+      .or(`and(user_id.eq.${user.id},friend_id.eq.${blockedId}),and(user_id.eq.${blockedId},friend_id.eq.${user.id})`);
+    await supabase.from('blocks').insert([{ blocker_id: user.id, blocked_id: blockedId }]);
+    alert('User blocked');
+    loadFriends();
+    loadFeed();
+  };
+
+  const updateProfile = async () => {
+    await supabase.from('profiles').update({
+      username: editedProfile.username,
+      is_private: editedProfile.is_private,
+      avatar_config: editedProfile.avatar_config
+    }).eq('id', user.id);
+    
+    setProfile(editedProfile);
+    setIsEditingProfile(false);
+    alert('Profile updated!');
+  };
+
+  const playTicTacToe = (index) => {
+    if (ticTacToeBoard[index]) return;
+    
+    const newBoard = [...ticTacToeBoard];
+    newBoard[index] = ticTacToePlayer;
+    setTicTacToeBoard(newBoard);
+    
+    const winner = checkWinner(newBoard);
+    if (winner || newBoard.every(cell => cell)) {
+      setTimeout(() => {
+        alert(winner ? `${winner} wins!` : "It's a draw!");
+        resetTicTacToe();
+      }, 100);
+    } else {
+      setTicTacToePlayer(ticTacToePlayer === 'X' ? 'O' : 'X');
+    }
+  };
+
+  const checkWinner = (board) => {
+    const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+    for (let line of lines) {
+      const [a, b, c] = line;
+      if (board[a] && board[a] === board[b] && board[a] === board[c]) return board[a];
+    }
+    return null;
+  };
+
+  const resetTicTacToe = () => {
+    setTicTacToeBoard(Array(9).fill(null));
+    setTicTacToePlayer('X');
+  };
+
+  const completeResetSpace = async () => {
+    await supabase.from('profiles').update({ aura: 'blue', violations: 0 }).eq('id', user.id);
+    alert('You\'re welcome back. Let\'s keep this space calm.');
+    loadProfile(user.id);
+  };
+
+  const Avatar = ({ config = {}, size = 64 }) => {
+    const skinColor = config.skinColor || '#FFD1A3';
+    const hairColor = config.hairColor || '#4A2C2A';
+    const hairStyle = config.hairStyle || 'short';
+    const facialHair = config.facialHair || 'none';
+    
+    return (
+      <svg width={size} height={size} viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="20" fill={skinColor} />
+        {hairStyle === 'short' && (
+          <path d="M32 12 Q20 12 16 20 Q16 12 32 12 Q48 12 48 20 Q44 12 32 12" fill={hairColor} />
+        )}
+        {hairStyle === 'long' && (
+          <path d="M32 12 Q18 12 14 22 L12 35 Q12 28 14 22 Q18 12 32 12 Q46 12 50 22 Q52 28 52 35 L50 22 Q46 12 32 12" fill={hairColor} />
+        )}
+        <circle cx="24" cy="28" r="2" fill="#000" />
+        <circle cx="40" cy="28" r="2" fill="#000" />
+        <path d="M24 38 Q32 42 40 38" stroke="#000" strokeWidth="2" fill="none" />
+        {facialHair === 'mustache' && (
+          <path d="M24 36 Q28 38 32 36 Q36 38 40 36" stroke={hairColor} strokeWidth="2" fill="none" />
+        )}
+        {facialHair === 'beard' && (
+          <>
+            <path d="M24 36 Q28 38 32 36 Q36 38 40 36" stroke={hairColor} strokeWidth="2" fill="none" />
+            <path d="M20 38 Q32 46 44 38" fill={hairColor} />
+          </>
+        )}
+      </svg>
+    );
+  };
+
+  // Splash Screen
+  if (view === 'splash') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="mb-8">
+            <div className="w-24 h-24 mx-auto mb-4 bg-gradient-to-br from-blue-400 to-indigo-600 rounded-full flex items-center justify-center">
+              <span className="text-5xl">🌿</span>
+            </div>
+            <h1 className="text-6xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent mb-2">
+              Good Energy
+            </h1>
+            <p className="text-xl text-gray-600">A calm space for positive connection</p>
+          </div>
+          
+          <div className="space-y-4">
+            <button
+              onClick={() => { setView('auth'); setAuthMode('signup'); }}
+              className="w-64 bg-indigo-600 text-white py-3 px-6 rounded-xl font-medium hover:bg-indigo-700 transition shadow-lg"
+            >
+              Get Started
+            </button>
+            <button
+              onClick={() => { setView('auth'); setAuthMode('login'); }}
+              className="w-64 bg-white text-indigo-600 py-3 px-6 rounded-xl font-medium hover:bg-gray-50 transition border-2 border-indigo-600"
+            >
+              Log In
+            </button>
+          </div>
+          
+          <div className="mt-12 text-sm text-gray-500 space-x-4">
+            <button onClick={() => setShowTerms(true)} className="hover:text-indigo-600">Terms</button>
+            <button onClick={() => setShowPrivacy(true)} className="hover:text-indigo-600">Privacy</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Auth Screen
+  if (view === 'auth') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-indigo-600 mb-2">Good Energy</h1>
+            <p className="text-gray-600">Social media for authentic connection</p>
+          </div>
+          
+          <div className="flex gap-2 mb-6">
+            <button
+              onClick={() => setAuthMode('login')}
+              className={`flex-1 py-2 rounded-lg font-medium transition ${
+                authMode === 'login' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              Log In
+            </button>
+            <button
+              onClick={() => setAuthMode('signup')}
+              className={`flex-1 py-2 rounded-lg font-medium transition ${
+                authMode === 'signup' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
+          
+          <div>
+            {authMode === 'signup' && (
+              <input
+                type="text"
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full p-3 border rounded-lg mb-4"
+              />
+            )}
+            
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full p-3 border rounded-lg mb-4"
+            />
+            
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full p-3 border rounded-lg mb-4"
+            />
+            
+            {authMode === 'signup' && (
+              <label className="flex items-start gap-2 mb-4 text-sm">
+                <input
+                  type="checkbox"
+                  checked={hasAcceptedTerms}
+                  onChange={(e) => setHasAcceptedTerms(e.target.checked)}
+                  className="mt-1"
+                />
+                <span className="text-gray-600">
+                  I accept the{' '}
+                  <button onClick={() => setShowTerms(true)} className="text-indigo-600 hover:underline">
+                    Terms of Service
+                  </button>
+                  {' '}and{' '}
+                  <button onClick={() => setShowPrivacy(true)} className="text-indigo-600 hover:underline">
+                    Privacy Policy
+                  </button>
+                </span>
+              </label>
+            )}
+            
+            <button
+              onClick={authMode === 'login' ? handleLogin : handleSignUp}
+              className="w-full bg-indigo-600 text-white py-3 rounded-lg font-medium hover:bg-indigo-700 transition"
+            >
+              {authMode === 'login' ? 'Log In' : 'Create Account'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Onboarding Flow
+  if (view === 'onboarding') {
+    const onboardingScreens = [
+      {
+        title: 'Welcome to Good Energy 🌿',
+        subtitle: 'A calm space for positive connection.',
+        content: (
+          <div className="space-y-4 text-center">
+            <p className="text-lg text-gray-700">No ads. No algorithms. No drama.</p>
+          </div>
+        ),
+        button: 'Continue'
+      },
+      {
+        title: 'This Space is Different',
+        subtitle: 'Most platforms reward speed and outrage. We reward thoughtfulness and kindness.',
+        content: (
+          <div className="space-y-3 text-left">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">💬</span>
+              <div>
+                <p className="font-medium">Comments are positive by design</p>
+                <p className="text-sm text-gray-600">Our system gently guides conversations</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🌊</span>
+              <div>
+                <p className="font-medium">No reply chains or dogpiling</p>
+                <p className="text-sm text-gray-600">Keeps the feed calm and readable</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🛡️</span>
+              <div>
+                <p className="font-medium">Private, respectful moderation</p>
+                <p className="text-sm text-gray-600">No public shaming, ever</p>
+              </div>
+            </div>
+          </div>
+        ),
+        button: 'I\'m ready for this'
+      },
+      {
+        title: 'How Communication Works Here',
+        subtitle: 'Simple rules for a calm space',
+        content: (
+          <div className="space-y-4 text-left">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <p className="font-medium mb-2">💬 Comments</p>
+              <p className="text-sm text-gray-700">Only on posts, always flat (no reply chains)</p>
+            </div>
+            <div className="bg-purple-50 p-4 rounded-lg">
+              <p className="font-medium mb-2">💙 Reactions</p>
+              <p className="text-sm text-gray-700">Choose any emoji, change it anytime</p>
+            </div>
+            <div className="bg-indigo-50 p-4 rounded-lg">
+              <p className="font-medium mb-2">✉️ Messages</p>
+              <p className="text-sm text-gray-700">Private, 1-on-1, easy to exit</p>
+            </div>
+            <p className="text-sm text-gray-600 italic">Want to respond to someone's comment? Send them a private message.</p>
+          </div>
+        ),
+        button: 'Got it'
+      },
+      {
+        title: 'Keeping This Space Calm',
+        subtitle: 'Our moderation is designed to guide, not punish',
+        content: (
+          <div className="space-y-4">
+            <div className="bg-orange-50 border-l-4 border-orange-400 p-4 rounded">
+              <p className="text-sm text-gray-700">
+                If a comment doesn't align with our tone, you'll see: <strong>"This doesn't match the calm tone here. Try rewording."</strong>
+              </p>
+            </div>
+            <p className="text-gray-700">This isn't about censorship — it's about intention.</p>
+            <p className="text-gray-700 font-medium">Everyone deserves a second chance. Everyone deserves dignity.</p>
+          </div>
+        ),
+        button: 'I understand'
+      },
+      {
+        title: 'You\'re All Set ✨',
+        subtitle: 'Remember',
+        content: (
+          <div className="space-y-4 text-center">
+            <p className="text-lg text-gray-700">Words shape spaces</p>
+            <p className="text-lg text-gray-700">Kindness is noticed here</p>
+            <p className="text-lg text-gray-700">You don't need to be loud to be heard</p>
+            <p className="text-2xl mt-6">Welcome to Good Energy.</p>
+          </div>
+        ),
+        button: 'Enter the Space'
+      }
+    ];
+
+    const currentScreen = onboardingScreens[onboardingStep];
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-lg">
+          <div className="mb-6">
+            <div className="flex gap-1 mb-6">
+              {onboardingScreens.map((_, i) => (
+                <div
+                  key={i}
+                  className={`h-1 flex-1 rounded ${i === onboardingStep ? 'bg-indigo-600' : 'bg-gray-200'}`}
+                />
+              ))}
+            </div>
+            
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">{currentScreen.title}</h2>
+            <p className="text-gray-600">{currentScreen.subtitle}</p>
+          </div>
+          
+          <div className="mb-8">
+            {currentScreen.content}
+          </div>
+          
+          <button
+            onClick={() => {
+              if (onboardingStep < onboardingScreens.length - 1) {
+                setOnboardingStep(onboardingStep + 1);
+              } else {
+                completeOnboarding();
+              }
+            }}
+            className="w-full bg-indigo-600 text-white py-3 rounded-lg font-medium hover:bg-indigo-700 transition"
+          >
+            {currentScreen.button}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Reset Space
+  if (view === 'reset') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md text-center">
+          <Shield className="w-16 h-16 text-orange-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold mb-4">Quiet Mode</h2>
+          <p className="text-gray-600 mb-6">
+            Your aura needs restoration. Take a moment to reset. Play tic-tac-toe to reflect, then return with good energy.
+          </p>
+          
+          <div className="grid grid-cols-3 gap-2 mb-6 max-w-xs mx-auto">
+            {ticTacToeBoard.map((cell, i) => (
+              <button
+                key={i}
+                onClick={() => playTicTacToe(i)}
+                className="aspect-square bg-gray-100 rounded-lg text-3xl font-bold hover:bg-gray-200 transition"
+              >
+                {cell}
+              </button>
+            ))}
+          </div>
+          
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+            <p className="text-sm text-gray-700">You have {profile?.violations || 0} violation(s). After 24 hours, you can return to the main feed.</p>
+          </div>
+          
+          <button
+            onClick={completeResetSpace}
+            className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition"
+          >
+            Complete Reset
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Main App
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white border-b sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-indigo-600">Good Energy</h1>
+          
+          <div className="flex items-center gap-4">
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setView('feed'); loadFeed(); }}
+                className={`p-2 rounded-lg transition ${view === 'feed' ? 'bg-indigo-100 text-indigo-600' : 'text-gray-600 hover:bg-gray-100'}`}
+                title="Home"
+              >
+                <Home className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => { setView('social'); loadFriendRequests(); loadFriends(); }}
+                className={`p-2 rounded-lg transition ${view === 'social' ? 'bg-indigo-100 text-indigo-600' : 'text-gray-600 hover:bg-gray-100'}`}
+                title="Friends"
+              >
+                <Users className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setShowSettings(true)}
+                className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 transition"
+                title="Settings"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <Avatar config={profile?.avatar_config} size={40} />
+              <span className="font-medium">{profile?.username}</span>
+              <div 
+                className={`w-3 h-3 rounded-full ${
+                  profile?.aura === 'blue' ? 'bg-blue-500' : 
+                  profile?.aura === 'orange' ? 'bg-orange-500' : 'bg-black'
+                }`} 
+                title={`Aura: ${profile?.aura}`}
+              />
+              <button onClick={handleLogout} className="text-gray-600 hover:text-gray-800" title="Logout">
+                <LogOut className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-4xl mx-auto p-4">
+        {view === 'feed' && (
+          <>
+            <div className="bg-white rounded-xl p-4 mb-4 shadow-sm">
+              <textarea
+                value={newPost}
+                onChange={(e) => setNewPost(e.target.value)}
+                placeholder="Share something positive..."
+                className="w-full p-3 border rounded-lg resize-none"
+                rows="3"
+              />
+              {moderationError && (
+                <div className="mt-2 p-3 bg-orange-50 border-l-4 border-orange-400 rounded text-sm text-orange-800 flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <span>{moderationError}</span>
+                </div>
+              )}
+              <button
+                onClick={createPost}
+                className="mt-2 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition"
+              >
+                Post
+              </button>
+            </div>
+
+            {posts.length === 0 && (
+              <div className="bg-white rounded-xl p-8 text-center">
+                <p className="text-gray-500 mb-4">No posts yet. Be the first to share something positive!</p>
+              </div>
+            )}
+
+            {posts.map(post => (
+              <div key={post.id} className="bg-white rounded-xl p-4 mb-4 shadow-sm">
+                <div className="flex items-center gap-3 mb-3">
+                  <Avatar config={post.profiles?.avatar_config} size={40} />
+                  <div>
+                    <span className="font-medium">{post.profiles?.username}</span>
+                    <p className="text-xs text-gray-500">
+                      {new Date(post.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+                
+                <p className="mb-3 whitespace-pre-wrap">{post.content}</p>
+                
+                <div className="flex gap-4 mb-3 pb-3 border-b">
+                  <button
+                    onClick={() => toggleReaction(post.id)}
+                    className={`flex items-center gap-1 transition ${
+                      post.reactions?.some(r => r.user_id === user.id)
+                        ? 'text-red-500'
+                        : 'text-gray-600 hover:text-red-500'
+                    }`}
+                  >
+                    <Heart className="w-5 h-5" fill={post.reactions?.some(r => r.user_id === user.id) ? 'currentColor' : 'none'} />
+                    <span>{post.reactions?.length || 0}</span>
+                  </button>
+                  <button className="flex items-center gap-1 text-gray-600">
+                    <MessageCircle className="w-5 h-5" />
+                    <span>{post.comments?.length || 0}</span>
+                  </button>
+                </div>
+                
+                {post.comments?.map(comment => (
+                  <div key={comment.id} className="ml-4 mb-2 p-2 bg-gray-50 rounded">
+                    <span className="font-medium text-sm">{comment.profiles?.username}: </span>
+                    <span className="text-sm text-gray-700">{comment.content}</span>
+                  </div>
+                ))}
+                
+                <div className="mt-3">
+                  <input
+                    type="text"
+                    placeholder="Add a positive comment..."
+                    value={commentInputs[post.id] || ''}
+                    onChange={(e) => setCommentInputs(prev => ({ ...prev, [post.id]: e.target.value }))}
+                    className="w-full p-2 border rounded-lg text-sm"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && commentInputs[post.id]?.trim()) {
+                        addComment(post.id, commentInputs[post.id]);
+                      }
+                    }}
+                  />
+                  {moderationError && (
+                    <div className="mt-2 p-2 bg-orange-50 border-l-4 border-orange-400 rounded text-xs text-orange-800 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                      <span>{moderationError}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+
+        {view === 'social' && (
+          <>
+            <div className="bg-white rounded-xl p-4 mb-4 shadow-sm">
+              <h3 className="font-bold mb-3">Search Users</h3>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by username..."
+                  className="flex-1 p-2 border rounded-lg"
+                  onKeyPress={(e) => e.key === 'Enter' && searchUsers()}
+                />
+                <button
+                  onClick={searchUsers}
+                  className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700"
+                >
+                  <Search className="w-5 h-5" />
+                </button>
+              </div>
+              
+              {searchResults.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {searchResults.map(result => (
+                    <div key={result.id} className="flex items-center justify-between p-2 border rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Avatar config={result.avatar_config} size={40} />
+                        <span>{result.username}</span>
+                      </div>
+                      <button
+                        onClick={() => sendFriendRequest(result.id)}
+                        className="bg-blue-500 text-white px-4 py-1 rounded-lg hover:bg-blue-600"
+                      >
+                        Add Friend
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {friendRequests.length > 0 && (
+              <div className="bg-white rounded-xl p-4 mb-4 shadow-sm">
+                <h3 className="font-bold mb-3">Friend Requests</h3>
+                {friendRequests.map(req => (
+                  <div key={req.id} className="flex items-center justify-between p-2 border rounded-lg mb-2">
+                    <div className="flex items-center gap-3">
+                      <Avatar config={req.sender?.avatar_config} size={40} />
+                      <span>{req.sender?.username}</span>
+                    </div>
+                    <button
+                      onClick={() => acceptFriendRequest(req.id, req.sender_id)}
+                      className="bg-green-500 text-white px-4 py-1 rounded-lg hover:bg-green-600"
+                    >
+                      Accept
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="bg-white rounded-xl p-4 shadow-sm">
+              <h3 className="font-bold mb-3">Friends ({friends.length})</h3>
+              {friends.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">No friends yet. Search for users above!</p>
+              ) : (
+                friends.map(friend => (
+                  <div key={friend.friend_id} className="flex items-center justify-between p-2 border rounded-lg mb-2">
+                    <div className="flex items-center gap-3">
+                      <Avatar config={friend.profile?.avatar_config} size={40} />
+                      <span>{friend.profile?.username}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => unfriend(friend.friend_id)}
+                        className="bg-gray-500 text-white px-3 py-1 rounded-lg hover:bg-gray-600 text-sm"
+                      >
+                        Unfriend
+                      </button>
+                      <button
+                        onClick={() => blockUser(friend.friend_id)}
+                        className="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 text-sm"
+                      >
+                        Block
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold">Settings</h2>
+              <button onClick={() => setShowSettings(false)} className="text-gray-500 hover:text-gray-700">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            {isEditingProfile ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Username</label>
+                  <input
+                    type="text"
+                    value={editedProfile.username || ''}
+                    onChange={(e) => setEditedProfile({ ...editedProfile, username: e.target.value })}
+                    className="w-full p-2 border rounded-lg"
+                  />
+                </div>
+                
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editedProfile.is_private || false}
+                      onChange={(e) => setEditedProfile({ ...editedProfile, is_private: e.target.checked })}
+                    />
+                    <span className="text-sm">Private Profile (only friends can see posts)</span>
+                  </label>
+                </div>
+                
+                <div className="flex gap-2">
+                  <button
+                    onClick={updateProfile}
+                    className="flex-1 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => { setIsEditingProfile(false); setEditedProfile(profile); }}
+                    className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <button
+                  onClick={() => setIsEditingProfile(true)}
+                  className="w-full text-left p-3 hover:bg-gray-50 rounded-lg flex items-center justify-between"
+                >
+                  <span>Edit Profile</span>
+                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                </button>
+                
+                <button
+                  onClick={() => { setShowSettings(false); setShowTerms(true); }}
+                  className="w-full text-left p-3 hover:bg-gray-50 rounded-lg flex items-center justify-between"
+                >
+                  <span>Terms of Service</span>
+                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                </button>
+                
+                <button
+                  onClick={() => { setShowSettings(false); setShowPrivacy(true); }}
+                  className="w-full text-left p-3 hover:bg-gray-50 rounded-lg flex items-center justify-between"
+                >
+                  <span>Privacy Policy</span>
+                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                </button>
+                
+                <div className="pt-4 border-t">
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600 mb-1">Your Aura Status</p>
+                    <div className="flex items-center gap-2">
+                      <div className={`w-4 h-4 rounded-full ${
+                        profile?.aura === 'blue' ? 'bg-blue-500' : 
+                        profile?.aura === 'orange' ? 'bg-orange-500' : 'bg-black'
+                      }`} />
+                      <span className="font-medium capitalize">{profile?.aura}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Violations: {profile?.violations || 0}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Terms Modal */}
+      {showTerms && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold">Terms of Service</h2>
+              <button onClick={() => setShowTerms(false)} className="text-gray-500 hover:text-gray-700">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="prose prose-sm max-w-none space-y-4 text-gray-700">
+              <p className="text-xs text-gray-500">Last Updated: December 14, 2025</p>
+              
+              <h3 className="font-bold text-lg mt-4">Welcome to Good Energy</h3>
+              <p>Good Energy is a social space designed for calm expression and positive connection. By using our service, you agree to these terms.</p>
+              
+              <h4 className="font-bold">1. Eligibility</h4>
+              <p>You must be at least 13 years old to use Good Energy. If you are under 18, you must have parental consent.</p>
+              
+              <h4 className="font-bold">2. Account Responsibilities</h4>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>You are responsible for maintaining the security of your account</li>
+                <li>You may not share your account with others</li>
+                <li>You must provide accurate information during registration</li>
+                <li>One account per person</li>
+              </ul>
+              
+              <h4 className="font-bold">3. Our Community Philosophy</h4>
+              <p>Good Energy exists to create a calm, drama-free environment. We ask that you:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Share content that uplifts rather than divides</li>
+                <li>Respect the privacy of others</li>
+                <li>Use language that aligns with our positive tone</li>
+                <li>Avoid confrontation in public spaces</li>
+              </ul>
+              
+              <h4 className="font-bold">4. Content Guidelines</h4>
+              <p><strong>Allowed:</strong></p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Images and videos (up to 90 seconds)</li>
+                <li>Positive comments and reactions</li>
+                <li>Personal expression that respects others</li>
+                <li>Constructive, uplifting communication</li>
+              </ul>
+              
+              <p><strong>Not Allowed:</strong></p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Harassment, bullying, or targeted negativity</li>
+                <li>Explicit sexual content</li>
+                <li>Violence or threats</li>
+                <li>Hate speech or discrimination</li>
+                <li>Spam or misleading content</li>
+                <li>Impersonation</li>
+                <li>Content that violates others' intellectual property</li>
+              </ul>
+              
+              <h4 className="font-bold">5. Moderation & Aura System</h4>
+              <p>Good Energy uses a private regulation system:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Your participation is monitored for alignment with community values</li>
+                <li>Violations may result in temporary restricted access</li>
+                <li>We call this "Quiet Mode" — a space for reflection</li>
+                <li>Repeated violations may result in permanent removal</li>
+                <li>You will not be publicly labeled or shamed</li>
+              </ul>
+              
+              <h4 className="font-bold">6. Privacy in Moderation</h4>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Your violation status is private</li>
+                <li>Other users cannot see your moderation history</li>
+                <li>We do not publicly announce enforcement actions</li>
+              </ul>
+              
+              <h4 className="font-bold">7. Content Ownership</h4>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>You retain ownership of content you post</li>
+                <li>You grant Good Energy a license to display and distribute your content within our service</li>
+                <li>You may delete your content at any time</li>
+                <li>Deleted content may remain in backups for up to 90 days</li>
+              </ul>
+              
+              <h4 className="font-bold">8. Account Termination</h4>
+              <p>We reserve the right to suspend or terminate accounts that violate these terms. You may delete your account at any time through settings.</p>
+              
+              <h4 className="font-bold">9. Disclaimers</h4>
+              <p>Good Energy is provided "as is". We do not guarantee uninterrupted service and are not responsible for user-generated content or interactions between users.</p>
+              
+              <h4 className="font-bold">10. Contact</h4>
+              <p>For questions: support@goodenergy.app</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Privacy Modal */}
+      {showPrivacy && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold">Privacy Policy</h2>
+              <button onClick={() => setShowPrivacy(false)} className="text-gray-500 hover:text-gray-700">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="prose prose-sm max-w-none space-y-4 text-gray-700">
+              <p className="text-xs text-gray-500">Last Updated: December 14, 2025</p>
+              
+              <h3 className="font-bold text-lg mt-4">Our Commitment</h3>
+              <p>Good Energy respects your privacy. This policy explains how we collect, use, and protect your information.</p>
+              
+              <h4 className="font-bold">Information We Collect</h4>
+              <p><strong>Account Information:</strong></p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Email address</li>
+                <li>Password (encrypted)</li>
+                <li>Avatar configuration (stored as data, not photos)</li>
+              </ul>
+              
+              <p><strong>Content You Create:</strong></p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Posts (images, videos, captions)</li>
+                <li>Comments</li>
+                <li>Emoji reactions</li>
+              </ul>
+              
+              <p><strong>Automatically Collected:</strong></p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Device information</li>
+                <li>Usage patterns</li>
+                <li>IP address</li>
+                <li>Session data</li>
+              </ul>
+              
+              <p><strong>What We Don't Collect:</strong></p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Phone numbers</li>
+                <li>Real names (unless you choose to share)</li>
+                <li>Location data</li>
+                <li>Browsing history outside our app</li>
+              </ul>
+              
+              <h4 className="font-bold">How We Use Your Information</h4>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>To provide and improve our service</li>
+                <li>To moderate content and ensure community safety</li>
+                <li>To communicate important updates</li>
+                <li>To analyze usage patterns (aggregated, not individual)</li>
+              </ul>
+              
+              <h4 className="font-bold">We Never:</h4>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Sell your data to third parties</li>
+                <li>Show you ads based on your data</li>
+                <li>Track you across other websites</li>
+                <li>Share your private information publicly</li>
+              </ul>
+              
+              <h4 className="font-bold">Your Privacy Rights</h4>
+              <p>You have the right to:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Access your data</li>
+                <li>Delete your account and data</li>
+                <li>Export your content</li>
+                <li>Opt out of certain data collection</li>
+                <li>Request corrections to your information</li>
+              </ul>
+              
+              <h4 className="font-bold">Moderation Privacy</h4>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Your violation history is private</li>
+                <li>Moderation decisions are not shared with other users</li>
+                <li>We do not create public records of enforcement actions</li>
+                <li>Your aura status is visible only to you</li>
+              </ul>
+              
+              <h4 className="font-bold">Data Security</h4>
+              <p>We implement encrypted data transmission, secure password storage, regular security audits, and access controls. However, no system is 100% secure. You are responsible for protecting your password.</p>
+              
+              <h4 className="font-bold">Contact</h4>
+              <p>For privacy concerns: privacy@goodenergy.app</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

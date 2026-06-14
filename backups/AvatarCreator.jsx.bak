@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { Camera, Search, X, Check } from 'lucide-react';
 
 const EMOJI_CATEGORIES = {
@@ -12,7 +12,7 @@ const EMOJI_CATEGORIES = {
   'Hearts & Symbols': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉','☸️','✡️','🔯','🕎','☯️','☦️','🛐','⭐','🌟','✨','⚡','💫','🔥','💥','☄️','💦','💨','🌈','☀️','🌙','☁️','⛅','🌤','🌦','🌧','🌩','🌨','☃️','⛄','❄️','🌬','🌪','🌫','☂️','☔','💧','🌊','🔴','🟠','🟡','🟢','🔵','🟣','🟤','⚫','⚪','🟥','🟧','🟨','🟩','🟦','🟪','🟫','⬛','⬜','◼️','◻️','◾','◽','▪️','▫️','✔️','✅','☑️','❌','❎','➕','➖','✖️','➗','💯','💢','💤','💬','💭']
 };
 
-const AvatarCreator = ({ onComplete, allowPhoto = true }) => {
+const AvatarCreator = ({ onComplete }) => {
   const [avatarType, setAvatarType] = useState('emoji');
   const [selectedEmoji, setSelectedEmoji] = useState('😊');
   const [selectedColor, setSelectedColor] = useState('bg-blue-500');
@@ -20,10 +20,6 @@ const AvatarCreator = ({ onComplete, allowPhoto = true }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('Smileys');
   const fileInputRef = useRef(null);
-
-  useEffect(() => {
-    if (!allowPhoto && avatarType === 'photo') setAvatarType('emoji');
-  }, [allowPhoto]);
 
   const colors = [
     'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500', 
@@ -105,20 +101,18 @@ const AvatarCreator = ({ onComplete, allowPhoto = true }) => {
             <p className="text-sm text-gray-600">1000+ emojis</p>
           </button>
 
-          {allowPhoto && (
-            <button
-              onClick={() => setAvatarType('photo')}
-              className={`p-6 rounded-xl border-2 transition-all ${
-                avatarType === 'photo'
-                  ? 'border-indigo-600 bg-indigo-50 shadow-lg scale-105'
-                  : 'border-gray-300 hover:border-gray-400'
-              }`}
-            >
-              <Camera className="w-12 h-12 mx-auto mb-3 text-gray-600" />
-              <p className="font-bold text-gray-800">Photo Avatar</p>
-              <p className="text-sm text-gray-600">Upload image</p>
-            </button>
-          )}
+          <button
+            onClick={() => setAvatarType('photo')}
+            className={`p-6 rounded-xl border-2 transition-all ${
+              avatarType === 'photo'
+                ? 'border-indigo-600 bg-indigo-50 shadow-lg scale-105'
+                : 'border-gray-300 hover:border-gray-400'
+            }`}
+          >
+            <Camera className="w-12 h-12 mx-auto mb-3 text-gray-600" />
+            <p className="font-bold text-gray-800">Photo Avatar</p>
+            <p className="text-sm text-gray-600">Upload image</p>
+          </button>
         </div>
       </div>
 

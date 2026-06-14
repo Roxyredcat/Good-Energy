@@ -4,3 +4,5 @@ node_modules/
 /.vite
 .idea
 .DS_Store
+.vercel
+.env*

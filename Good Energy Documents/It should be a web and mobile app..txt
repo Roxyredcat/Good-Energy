@@ -1,0 +1,7 @@
+It should be a web and mobile app. I want user authentication with personal accounts. Posts and comments should be stored for history. I would like to build the full Good Energy app. It should be production-ready. Please correct the mustache feature to go above the mouth instead of underneath it.
+
+People can search and friend request. I forgot to add that feature.
+
+Please also allow for unfriending and blocking due to violation.
+
+And don't forget the tic-tac-toe feature when people violate terms. They have the option of playing tic-tac-toe when they are resetting due to negative behavior.
