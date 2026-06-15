@@ -12,7 +12,7 @@ import {
 import {
   getFirestore, collection, doc, setDoc, getDoc, addDoc, updateDoc,
   deleteDoc, onSnapshot, query, orderBy, serverTimestamp, arrayUnion,
-  where, getDocs
+  where, getDocs, deleteField
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
@@ -199,6 +199,11 @@ export default function App() {
   const [totalUnread, setTotalUnread] = useState(0);
   const [expandedComments, setExpandedComments] = useState({});
   const [postComments, setPostComments] = useState({});
+  // Black lounge (anonymous tic-tac-toe) state
+  const [blackGames, setBlackGames] = useState([]);
+  const [currentBlackGameId, setCurrentBlackGameId] = useState(null);
+  const [currentBlackGame, setCurrentBlackGame] = useState(null);
+  const [blackJoining, setBlackJoining] = useState(false);
 
   useEffect(() => {
     return onAuthStateChanged(auth, async (u) => {
@@ -327,6 +332,127 @@ export default function App() {
       const existing = receiverConvs.find(c => c.uid === user.uid);
       await updateInbox(chatWith, user.uid, text, (existing?.unread || 0) + 1);
     } catch (err) { setError('Failed to send: ' + err.message); }
+  };
+
+  // --- Black lounge: anonymous tic-tac-toe for users with `aura === 'black'` ---
+  useEffect(() => {
+    const now = Date.now();
+    const allowed = profile && profile.blackUntil && now < profile.blackUntil;
+    if (!user || !profile || !allowed) {
+      setBlackGames([]); setCurrentBlackGame(null); setCurrentBlackGameId(null); return;
+    }
+    const q = query(collection(db, 'black_games'), orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q, snap => {
+      const now = Date.now();
+      const games = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(g => {
+        const created = g.createdAt?.toDate ? g.createdAt.toDate().getTime() : (g.createdAt?.seconds ? g.createdAt.seconds * 1000 : now);
+        // keep games younger than 48 hours
+        return (now - created) < (48 * 60 * 60 * 1000);
+      });
+      setBlackGames(games);
+    });
+    // cleanup old games (client-triggered): delete any game older than 48 hours
+    const cleanupOldBlackGames = async () => {
+      try {
+        const snapAll = await getDocs(collection(db, 'black_games'));
+        const cutoff = Date.now() - (48 * 60 * 60 * 1000);
+        for (const d of snapAll.docs) {
+          const data = d.data();
+          const created = data.createdAt?.toDate ? data.createdAt.toDate().getTime() : (data.createdAt?.seconds ? data.createdAt.seconds * 1000 : Date.now());
+          if (created < cutoff) {
+            try { await deleteDoc(doc(db, 'black_games', d.id)); } catch (e) {}
+          }
+        }
+      } catch (e) { console.error('cleanupOldBlackGames', e); }
+    };
+    cleanupOldBlackGames();
+    return () => unsub();
+  }, [user, profile]);
+
+  // Auto-reset aura when blackUntil expires
+  useEffect(() => {
+    if (!user || !profile) return;
+    const raw = profile.blackUntil;
+    if (!raw) return;
+    const blackUntilTs = (raw && typeof raw.toMillis === 'function') ? raw.toMillis() : raw;
+    if (Date.now() <= blackUntilTs) return;
+    // blackUntil passed — restore to regular profile
+    (async () => {
+      try {
+        // Preserve violation history; only clear the temporary blackUntil and restore aura
+        await updateDoc(doc(db, 'profiles', user.uid), { aura: 'blue', blackUntil: deleteField() });
+        setProfile(p => ({ ...p, aura: 'blue', blackUntil: undefined }));
+      } catch (err) { console.error('failed to reinstate profile after blackUntil', err); }
+    })();
+  }, [user, profile]);
+
+  useEffect(() => {
+    if (!currentBlackGameId) { setCurrentBlackGame(null); return; }
+    const gDoc = doc(db, 'black_games', currentBlackGameId);
+    const unsub = onSnapshot(gDoc, snap => { if (snap.exists()) setCurrentBlackGame({ id: snap.id, ...snap.data() }); else setCurrentBlackGame(null); });
+    return () => unsub();
+  }, [currentBlackGameId]);
+
+  const createBlackGame = async () => {
+    if (!user) return setError('Not signed in');
+    if (!profile?.blackUntil || Date.now() > profile.blackUntil) return setError('Black Lounge access expired');
+    const data = { players: [user.uid], board: Array(9).fill(null), turn: user.uid, createdAt: serverTimestamp(), finished: false };
+    const docRef = await addDoc(collection(db, 'black_games'), data);
+    setCurrentBlackGameId(docRef.id);
+  };
+
+  const joinBlackGame = async (game) => {
+    if (!user) return setError('Not signed in');
+    if (!profile?.blackUntil || Date.now() > profile.blackUntil) return setError('Black Lounge access expired');
+    setBlackJoining(true);
+    try {
+      if (!game.players || game.players.length === 0) {
+        // should not happen — create instead
+        await createBlackGame();
+      } else if (game.players.length === 1 && game.players[0] !== user.uid) {
+        await updateDoc(doc(db, 'black_games', game.id), { players: arrayUnion(user.uid) });
+        setCurrentBlackGameId(game.id);
+      } else if (game.players.includes(user.uid)) {
+        setCurrentBlackGameId(game.id);
+      } else {
+        // skip full games
+      }
+    } catch (err) { setError('Failed to join: ' + err.message); }
+    finally { setBlackJoining(false); }
+  };
+
+  const leaveBlackGame = async (gameId) => {
+    try {
+      const g = await getDoc(doc(db, 'black_games', gameId));
+      if (!g.exists()) return;
+      const data = g.data();
+      const players = (data.players || []).filter(id => id !== user.uid);
+      if (players.length === 0) await deleteDoc(doc(db, 'black_games', gameId));
+      else await updateDoc(doc(db, 'black_games', gameId), { players });
+    } catch (err) { console.error(err); }
+    setCurrentBlackGameId(null); setCurrentBlackGame(null);
+  };
+
+  const makeBlackMove = async (gameId, index) => {
+    if (!user) return; if (!currentBlackGame) return;
+    if (currentBlackGame.finished) return;
+    const players = currentBlackGame.players || [];
+    const myIndex = players.indexOf(user.uid);
+    if (myIndex === -1) return; // not part of game
+    const mark = myIndex === 0 ? 'X' : 'O';
+    if (currentBlackGame.turn !== user.uid) return;
+    const board = currentBlackGame.board || Array(9).fill(null);
+    if (board[index]) return;
+    board[index] = mark;
+    // check win
+    const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+    let finished = false; let winner = null;
+    for (const [a,b,c] of wins) if (board[a] && board[a] === board[b] && board[a] === board[c]) { finished = true; winner = board[a]; }
+    const isDraw = !finished && board.every(Boolean);
+    const nextTurn = finished || isDraw ? null : (players.find(p => p !== user.uid) || null);
+    try {
+      await updateDoc(doc(db, 'black_games', gameId), { board, turn: nextTurn, finished: finished || isDraw, winner: winner || null });
+    } catch (err) { console.error('makeBlackMove', err); }
   };
 
   const searchUsers = async (q) => {
@@ -474,8 +600,11 @@ export default function App() {
   const violation = async () => {
     const v = (profile.violations || 0) + 1;
     const aura = v >= 3 ? 'black' : v === 1 ? 'orange' : 'blue';
-    await updateDoc(doc(db, 'profiles', user.uid), { violations: v, aura });
-    setProfile(p => ({ ...p, violations: v, aura }));
+    const update = { violations: v, aura, lastViolationAt: serverTimestamp() };
+    // If moving to black, set a blackUntil timestamp (48 hours from now)
+    if (aura === 'black') update.blackUntil = Date.now() + (48 * 60 * 60 * 1000);
+    await updateDoc(doc(db, 'profiles', user.uid), update);
+    setProfile(p => ({ ...p, violations: v, aura, lastViolationAt: serverTimestamp(), blackUntil: aura === 'black' ? (Date.now() + (48 * 60 * 60 * 1000)) : p.blackUntil }));
     if (v >= 3) setView('reset');
   };
 
@@ -684,16 +813,68 @@ export default function App() {
     </div>
   );
     
-  
-  
-  
-  
-          : (<><div className="text-5xl mb-4">✅</div><h2 className="text-2xl font-bold text-green-600 mb-3">Account Verified!</h2><p className="text-gray-500 mb-6">Your teen can now access Good Energy!</p><button onClick={() => setView('splash')} className="w-full bg-indigo-600 text-white px-4 py-3 rounded-xl font-bold">Continue to App</button></>)
-        }
-      </div>
-    </div>
-  );
+  // --- Black Lounge view for anonymous tic-tac-toe (black aura users) ---
+  if (view === 'blackLounge') {
+      if (!profile || profile.aura !== 'black') return setView('feed');
+      // If currently in a specific game, show it
+      if (currentBlackGame) {
+        const players = currentBlackGame.players || [];
+        const myIndex = players.indexOf(user?.uid);
+        const markFor = idx => idx === 0 ? 'X' : 'O';
+        return (
+          <div className="min-h-screen p-4 flex items-center justify-center bg-gray-50">
+            <div className="bg-white rounded-3xl shadow-xl p-6 w-full max-w-sm text-center">
+              <h2 className="text-xl font-bold mb-2">Black Lounge — Game</h2>
+              <p className="text-sm text-gray-500 mb-4">Anonymous play only — Player 1 / Player 2</p>
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {(currentBlackGame.board || Array(9).fill(null)).map((cell, i) => (
+                  <button key={i} onClick={() => makeBlackMove(currentBlackGame.id, i)}
+                    className={`w-20 h-20 rounded-xl text-2xl font-bold ${cell ? 'bg-gray-100' : 'bg-white hover:bg-indigo-50'}`}>
+                    {cell || ''}
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-between text-sm text-gray-600 mb-4">
+                <div>Player 1</div>
+                <div>Player 2</div>
+              </div>
+              <div className="text-sm text-gray-700 mb-4">{currentBlackGame.finished ? (currentBlackGame.winner ? `Winner: ${currentBlackGame.winner}` : 'Draw') : (currentBlackGame.turn === user.uid ? 'Your turn' : 'Waiting for opponent')}</div>
+              <div className="flex gap-2">
+                <button onClick={() => leaveBlackGame(currentBlackGame.id)} className="flex-1 bg-gray-100 py-2 rounded-xl">Leave</button>
+                <button onClick={() => setView('feed')} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl">Back</button>
+              </div>
+            </div>
+          </div>
+        );
+      }
 
+      // Lounge lobby: show waiting/active games and create/join controls
+      return (
+        <div className="min-h-screen p-4 bg-gray-50">
+          <div className="max-w-2xl mx-auto">
+            <div className="bg-white p-6 rounded-3xl shadow-xl">
+              <h2 className="text-xl font-bold mb-2">Black Lounge</h2>
+              <p className="text-sm text-gray-500 mb-4">Anonymous area for users with a black aura. Games expire after 48 hours.</p>
+              <div className="space-y-3">
+                {blackGames.length === 0 && <div className="text-sm text-gray-400">No games yet. Create one to start.</div>}
+                {blackGames.map(g => (
+                  <div key={g.id} className="flex items-center justify-between p-3 border rounded-xl">
+                    <div className="text-sm text-gray-700">Game {g.id.slice(0,6)} • {g.players?.length === 1 ? 'Waiting' : 'In progress'}</div>
+                    <div className="flex gap-2">
+                      <button onClick={() => joinBlackGame(g)} className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-xl">Join</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex gap-2">
+                <button onClick={createBlackGame} className="flex-1 bg-gray-100 py-2 rounded-xl">Create Game</button>
+                <button onClick={() => setView('feed')} className="flex-1 bg-indigo-600 text-white py-2 rounded-xl">Back</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
   if (view === 'reset') return (
     <div className="min-h-screen flex items-center justify-center bg-gray-900 p-4">
       <div className="bg-white p-8 rounded-3xl text-center shadow-2xl max-w-sm w-full">
@@ -884,6 +1065,9 @@ export default function App() {
             </button>
             <button onClick={() => setShowSettings(true)} className="p-2 rounded-xl hover:bg-gray-100 transition text-gray-500"><Settings size={18} /></button>
             <button onClick={() => setSupportVisible(true)} className="text-xs bg-indigo-600 text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-indigo-700 transition">Help</button>
+            {profile?.aura === 'black' && (
+              <button onClick={() => setView('blackLounge')} className="text-xs bg-gray-800 text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-gray-900 transition ml-2">Black Lounge</button>
+            )}
             <button onClick={logout} className="p-2 rounded-xl hover:bg-gray-100 transition text-gray-400 hover:text-red-500"><LogOut size={16} /></button>
           </div>
         </div>
