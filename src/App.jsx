@@ -925,7 +925,7 @@ export default function App() {
 
   if (selectedProfileUser) {
     return (
-      <div className="min-h-screen p-4" style={{ background: 'linear-gradient(135deg, #f8faff 0%, #f0f4ff 100%)' }}>
+      <div className="min-h-screen p-4" style={{ background: 'linear-gradient(135deg, #f7f3ff 0%, #eef7ff 45%, #fff8f2 100%)' }}>
         <button onClick={() => setSelectedProfileUser(null)} className="mb-4 bg-white text-indigo-600 px-4 py-2 rounded-xl shadow-sm font-medium hover:shadow-md transition">← Back to Feed</button>
         <div className="max-w-sm mx-auto bg-white rounded-3xl shadow-xl overflow-hidden">
           <div className="h-24 bg-gradient-to-br from-indigo-400 to-violet-500 relative">
